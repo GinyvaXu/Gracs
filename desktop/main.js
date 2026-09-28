@@ -64,6 +64,7 @@ let pendingDisplayCapture = null; // { callback, audioRequested, sources }
 let activeWindowAudioSnapshot = null; // 窗口声音方案A：被静音应用的快照路径
 let remoteRecoveryShown = false;
 let localUrlForRecovery = '';
+let publicUrl = '';   // 自动端口映射成功后得到的公网入口（发给好友用）
 
 // ── 服务器连接配置（本机开服 / 连接朋友的远程服务器）──
 let connCfg = { mode: 'local', address: '', port: 3000, nickname: '' };
@@ -116,12 +117,14 @@ function writeConnectionConfig(cfg) {
 
 function getLocalUrls(port) {
   const urls = [];
+  if (publicUrl) urls.push(publicUrl);   // 公网入口优先展示（零外置软件直连）
   for (const list of Object.values(networkInterfaces())) {
     for (const net of list ?? []) {
       if (net.internal || net.address === '::1' || net.address.startsWith('fe80')) continue;
       urls.push(net.family === 'IPv6' ? `http://[${net.address}]:${port}` : `http://${net.address}:${port}`);
     }
   }
+  if (serverHandle?.httpsPort) urls.push(`https://127.0.0.1:${serverHandle.httpsPort}`);
   return urls;
 }
 
@@ -159,8 +162,19 @@ async function bootstrap() {
   try {
     serverHandle = await startGinyScreenServer({
       port: connCfg.port,   // 主机自选端口（默认 3000）
-      host: '::',           // 双栈监听：本机/局域网/ZeroTier 虚拟网/IPv6 均可访问
+      host: '::',           // 双栈监听：本机/局域网/IPv6 均可访问
       retryOnBusy: connCfg.mode === 'remote', // 本机开服端口必须严格；远程模式可自动换端口
+      onNetworkReady: () => {
+        const g = serverHandle?.network?.gateway;
+        const t = serverHandle?.network?.turn;
+        if (g?.ok && g.externalIp) {
+          const tcp = (g.mappings || []).find((m) => m.protocol === 'tcp' && m.internalPort === serverPort);
+          publicUrl = `http://${g.externalIp}:${tcp?.externalPort || serverPort}`;
+          logger.work(`公网入口已打通: ${publicUrl}`);
+        }
+        if (t?.running) logger.work(`内嵌中继服务运行中: UDP/TCP ${t.port}`);
+        refreshTrayMenu();
+      },
     });
   } catch (err) {
     logger.error('服务器启动失败:', err);
@@ -413,14 +427,19 @@ function createTray() {
   const image = nativeImage.createFromPath(join(__dirname, '..', 'assets', 'tray.png'));
   tray = new Tray(image);
   tray.setToolTip('GinyScreen');
+  refreshTrayMenu();
+  tray.on('double-click', () => showMainWindow());
+}
+
+function refreshTrayMenu() {
+  if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '打开主界面', click: () => showMainWindow() },
+    { label: '复制访问地址', click: () => clipboard.writeText(remoteOrigin || publicUrl || getLocalUrls(serverPort)[0] || appUrl) },
     { label: '返回服务器设置', click: () => { if (remoteOrigin) { remoteRecoveryShown = false; showRemoteRecovery('手动返回设置'); } } },
-    { label: '复制访问地址', click: () => clipboard.writeText(remoteOrigin || getLocalUrls(serverPort)[0] || appUrl) },
     { type: 'separator' },
     { label: '退出', click: () => { quitting = true; shutdown(); } },
   ]));
-  tray.on('double-click', () => showMainWindow());
 }
 
 function showRemoteRecovery(reason) {
@@ -609,13 +628,14 @@ function isRadminInstalled() {
 function shutdown() {
   try { serverHandle?.server?.closeAllConnections?.(); } catch { /* 忽略 */ }
   try { serverHandle?.server?.close(); } catch { /* 忽略 */ }
+  try { serverHandle?.stop?.(); } catch { /* 清理中继与端口映射 */ }
   app.quit();
 }
 
 app.on('window-all-closed', () => { /* 驻留托盘，不退出 */ });
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => {
-  try { serverHandle?.server?.close(); } catch { /* 兜底关闭 */ }
+  try { serverHandle?.stop?.(); } catch { /* 兜底清理 */ }
   if (activeWindowAudioSnapshot) {
     try {
       const snap = activeWindowAudioSnapshot;
