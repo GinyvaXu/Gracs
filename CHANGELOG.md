@@ -51,6 +51,8 @@
 - 服务器新增 `server/net/` 网络能力层：`interfaces / gateway / publicip / turn / tls / doctor`。
 - 新增运行时依赖：`turn-server`（STUN/TURN）、`@achingbrain/nat-port-mapper`（UPnP/NAT-PMP）、
   `qrcode-generator`（二维码）、`selfsigned`（自签名证书）。
+- **构建链路可复现**：新增 `npm run helper`（从 C# 源码本地编译系统助手）、`scripts/electron-builder.mjs`
+  （自动过滤缺失的可选资源 + 默认 npmmirror 镜像加速）；Radmin 安装包变为可选资源，缺失不再导致构建失败。
 
 ## [v1.4.1] - 2026-08-15
 

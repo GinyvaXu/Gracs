@@ -148,11 +148,19 @@ npm start
 ```bash
 npm install
 npm run icon            # 生成 assets 图标 + client/assets PWA 图标
+npm run helper          # 从源码编译 resources/gv-helper.exe（系统自带 csc.exe）
 npm run dist:debug      # 构建 Debug 版 → build/debug/
+npm run archive         # 归档到 versions/vX.Y.Z/（ProjectDock semver：dist/installer/src）
 ```
 
-> 构建需要 `resources/`（Radmin 安装包、gv-helper.exe、NAudio DLL）——
-> 这些二进制**不入 git 仓库**，全新克隆后需从上一版本归档或本机拷贝 `resources/` 才能打包 exe。
+> **构建依赖 `resources/`（不入 git 仓库）可以本地重建**：
+> - `npm run helper` 用系统自带 .NET Framework `csc.exe` 从 `desktop/helpers/gv-helper.cs` 编译系统助手；
+>   唯一第三方依赖是 NAudio 的两个 DLL（NuGet 下载 `NAudio.Core` / `NAudio.Wasapi` netstandard2.0 版放进 `resources/`，
+>   或解压到 `%TEMP%\naudio\{core,wasapi}\lib\netstandard2.0\` 由脚本自动复制）
+> - `resources/Radmin_VPN_2.0.4899.9.exe` 为**可选**（高级备选联机）；缺失时构建脚本会自动跳过并提示
+> - 打包统一走 `npm run dist:*`（内部使用 `scripts/electron-builder.mjs`：自动过滤缺失资源 + 默认 npmmirror 镜像加速下载 Electron/NSIS）
+> - 若 npm 拦截了安装脚本导致 Electron 二进制缺失：
+>   `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js`
 
 分支模型：日常开发在 `develop`，`main` 只接受 `develop` 的合并（--no-ff），每个节点对应一个已发布版本。
 

@@ -30,6 +30,7 @@ npm start               # 浏览器版：启动服务器（http://localhost:3000
 npm run electron        # 桌面版开发运行
 npm test                # 端到端冒烟测试（26 项断言，需先 npm start）
 npm run icon            # 重新生成图标（含 client/assets PWA 图标）
+npm run helper          # 从源码编译 resources/gv-helper.exe（.NET Framework csc，需要 NAudio DLL 已就位）
 npm run dist:debug      # 构建 Debug 版 exe（控制台+日志+DevTools，每次迭代必出）
 npm run dist:portable   # 构建便携版 exe（构建前自动从 VERSION 同步版本号）
 npm run dist:installer  # 构建安装版 exe
@@ -64,6 +65,15 @@ npm run archive         # 发布归档：产物/源码快照到 versions/vX.Y.Z/
 
 ## 注意事项
 - 项目路径含 `&`：npm scripts 一律用 `node node_modules/electron-builder/cli.js` 直调 CLI，不要用 `.bin` 的 .cmd 垫片（cmd 会把路径按 `&` 截断）
+- **构建依赖 `resources/`（不入库）可本地重建**：
+  - `npm run helper` 用系统自带 csc.exe 从 `desktop/helpers/gv-helper.cs` 编译 `gv-helper.exe`；
+    唯一的第三方依赖是 NAudio 的两个 DLL，从 NuGet 下载 `NAudio.Core` / `NAudio.Wasapi`（netstandard2.0）后
+    放到 `resources/`（或 `%TEMP%\naudio\{core,wasapi}\lib\netstandard2.0\` 由脚本自动复制）
+  - `resources/Radmin_VPN_2.0.4899.9.exe` 为可选（高级备选联机）；缺失时 `scripts/electron-builder.mjs`
+    会自动从打包清单过滤并打印警告，不影响构建
+- **打包走 `scripts/electron-builder.mjs`**（自动过滤缺失的可选资源 + 默认 npmmirror 镜像加速）；
+  不要直接调用 `node_modules/electron-builder/cli.js`，否则缺资源会直接构建失败
+- npm 默认拦截安装脚本时，electron 二进制可能缺失：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js` 补齐
 - Electron 主进程：`session.defaultSession` 必须在 `app.whenReady()` 之后使用，否则启动会静默失败
 - 日志：Debug 版双写 work-日期.log / error-日期.log，目录由 LOG_DIR 控制；桌面版写在 exe 旁 logs\
 - 前端要求安全上下文才能采集屏幕：localhost 与桌面版天然满足；局域网其它电脑需用 HTTPS（自动生成的自签名证书，端口 = 端口+1）
