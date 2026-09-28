@@ -1040,6 +1040,7 @@ async function leaveRoom() {
   state.focused = null;
   state.joined = false;
   state.stage.clear();
+  ui.renderMembers([], null, null, focusMember);   // 清空侧栏成员列表
   ui.setUplinkInfo('');
   ui.shareControlState({ sharing: false, pending: false, statusText: '' });
   try { await state.socket?.leave(); } catch { /* 忽略 */ }
