@@ -1,4 +1,5 @@
-> 📦 本文档为 **GinyVoC（v0.6.0 及以前）** 时代的调研/分析存档。GinyScreen v1.0.0 已移除语音通话，专注屏幕共享，内容仅供参考。
+> 📦 本文档为 **GinyVoC（v0.6.0 及以前）** 时代的调研/分析存档。GinyScreen v2.0.0 已转向「零外置软件联机 + 双链路共享」，内容仅供参考。
+> 最新的技术选型与决策记录见 [tech-alternatives.md](tech-alternatives.md)。
 
 ---
 
