@@ -1,0 +1,17 @@
+{
+  "name": "GinyScreen · 一起看屏幕",
+  "short_name": "GinyScreen",
+  "description": "自托管屏幕共享：局域网 / IPv6 / 公网自动直连，零外置联机软件",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a0c13",
+  "theme_color": "#0a0c13",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
