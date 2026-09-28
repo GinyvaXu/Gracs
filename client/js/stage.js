@@ -93,7 +93,9 @@ export class Stage {
   }
 
   _createTile(view) {
+    const tile = { root: null, media: null, audio: null, badgeEl: null, badgeText: null, kind: view.kind, view, order: 0 };
     const root = el('div', { class: 'tile' });
+    tile.root = root;
     let media = null;
     let audio = null;
     if (view.kind === 'video') {
@@ -105,15 +107,18 @@ export class Stage {
       root.append(media);
       if (view.audioEl) { audio = view.audioEl; audio.style.display = 'none'; root.append(audio); }
     }
+    tile.media = media;
+    tile.audio = audio;
+
     const top = el('div', { class: 'tile-top' },
       el('span', { class: 'tile-name', text: view.title || '' }),
       el('span', { class: 'tile-badge' }, el('span', { class: 'dot' }), el('span', { class: 'badge-text', text: view.badge?.text || '连接中' })),
     );
     root.append(top);
-    const badgeEl = top.querySelector('.tile-badge');
-    const badgeText = top.querySelector('.badge-text');
+    tile.badgeEl = top.querySelector('.tile-badge');
+    tile.badgeText = top.querySelector('.badge-text');
 
-    // 工具栏
+    // 工具栏（全屏 / 画中画 / 比例 / 音量 / 质量）
     const tools = el('div', { class: 'tile-tools' });
     if (view.kind !== 'empty') {
       const aspect = el('select', { title: '画面比例' },
@@ -123,12 +128,17 @@ export class Stage {
         el('option', { value: 'stretch', text: '拉伸' }),
       );
       aspect.value = this.aspect;
-      aspect.addEventListener('change', () => { this.setAspect(aspect.value); for (const t of this.tiles.values()) { const s = t.root.querySelector('select'); if (s) s.value = aspect.value; } });
+      aspect.addEventListener('change', () => {
+        this.setAspect(aspect.value);
+        for (const t of this.tiles.values()) { const s = t.root.querySelector('select'); if (s) s.value = aspect.value; }
+      });
       aspect.addEventListener('click', (e) => e.stopPropagation());
       tools.append(aspect);
 
-      const pip = el('button', { class: 'icon-btn', text: '⧉ 画中画', title: '弹出为系统小窗，可置顶', onclick: (e) => { e.stopPropagation(); this._pip(tile); } });
-      tools.append(pip);
+      const pip = view.kind === 'video'
+        ? el('button', { class: 'icon-btn', text: '⧉ 画中画', title: '弹出为系统小窗，可置顶', onclick: (e) => { e.stopPropagation(); this._pip(tile); } })
+        : null;
+      if (pip) tools.append(pip);
       const fs = el('button', { class: 'icon-btn', text: '⛶ 全屏', title: '全屏观看（Esc 退出）', onclick: (e) => { e.stopPropagation(); this._fullscreen(tile); } });
       tools.append(fs);
       const stats = el('button', { class: 'icon-btn', text: '📶', title: '查看该画面的连接质量', onclick: (e) => { e.stopPropagation(); this.onAction?.(view.id, 'stats'); } });
@@ -154,7 +164,7 @@ export class Stage {
       if (root.parentElement === this.stripEl) this.onFocus?.(view.id);
       else root.classList.toggle('pinned');
     });
-    return { root, media, audio, badgeEl, badgeText, kind: view.kind, view, order: this.tiles.size };
+    return tile;
   }
 
   _syncTile(tile, view, isMain) {

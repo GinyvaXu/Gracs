@@ -45,21 +45,30 @@ export class StatsHub {
     for (const [peerId, pc] of this.mesh.outPcs) {
       out.set(peerId, await this._collect(pc, 'out', peerId));
     }
+    // 影院模式的系统声音走独立连接（audio-only），把音频统计合并到同一位观看者
+    for (const [peerId, pc] of this.mesh.outAudio) {
+      const audio = await this._collect(pc, 'out', peerId, { audioOnly: true });
+      mergeAudio(out, peerId, audio);
+    }
     const inbound = new Map();
     for (const [peerId, pc] of this.mesh.inPcs) {
       inbound.set(peerId, await this._collect(pc, 'in', peerId));
+    }
+    for (const [peerId, pc] of this.mesh.inAudio) {
+      const audio = await this._collect(pc, 'in', peerId, { audioOnly: true });
+      mergeAudio(inbound, peerId, audio);
     }
     this.samples = { out, in: inbound, at: Date.now() };
     await this._adapt();
     this.onSample?.(this.samples);
   }
 
-  async _collect(pc, direction, peerId) {
+  async _collect(pc, direction, peerId, { audioOnly = false } = {}) {
     const prevMap = direction === 'out' ? this.prevOut : this.prevIn;
     const prev = prevMap.get(peerId) || null;
     let raw;
     try { raw = await pc.getStats(); } catch { return null; }
-    const snap = { timestamp: 0, bytes: 0, frames: 0, fps: 0, width: 0, height: 0, loss: 0, rtt: null, availableOutgoingBitrate: null, limit: null, relay: false, codec: '', jitter: null, freezes: 0 };
+    const snap = { timestamp: 0, bytes: 0, frames: 0, fps: 0, width: 0, height: 0, loss: 0, rtt: null, availableOutgoingBitrate: null, limit: null, relay: false, codec: '', jitter: null, freezes: 0, hasAudio: false, audioBytes: 0, audioPackets: 0, audioBitrate: 0 };
     const byId = new Map();
     raw.forEach((s) => byId.set(s.id, s));
     let pairId = null;
@@ -81,11 +90,24 @@ export class StatsHub {
     }
     const rtpType = direction === 'out' ? 'outbound-rtp' : 'inbound-rtp';
     let rtp = null;
+    let audioRtp = null;
     const remoteInbound = [];
     raw.forEach((s) => {
       if (s.type === rtpType && s.kind === 'video' && !s.isRemote) rtp = rtp || s;
+      if (s.type === rtpType && s.kind === 'audio' && !s.isRemote) audioRtp = audioRtp || s;
       if (direction === 'out' && s.type === 'remote-inbound-rtp' && s.kind === 'video') remoteInbound.push(s);
     });
+    // 音频链路状态（共享者视角：我发的声音；观看者视角：我收到的声音）
+    if (audioRtp) {
+      const bytesKey = direction === 'out' ? 'bytesSent' : 'bytesReceived';
+      const packetsKey = direction === 'out' ? 'packetsSent' : 'packetsReceived';
+      snap.hasAudio = true;
+      snap.audioPackets = audioRtp[packetsKey] || 0;
+      snap.audioBytes = audioRtp[bytesKey] || 0;
+      snap.audioBitrate = rateOf(prev?.audio ? { ...prev.audio, timestamp: prev.ts } : null, { ...audioRtp, timestamp: audioRtp.timestamp || Date.now() }, bytesKey);
+    } else {
+      snap.hasAudio = false;
+    }
     if (rtp) {
       snap.timestamp = rtp.timestamp || Date.now();
       snap.bytes = direction === 'out' ? rtp.bytesSent : rtp.bytesReceived;
@@ -101,7 +123,7 @@ export class StatsHub {
       if (prevRtp && prevRtp.timestamp === snap.timestamp) {
         snap.frames = prevRtp.frames; // 同一采样，避免帧数回退
       }
-    } else {
+    } else if (!audioOnly) {
       return null;
     }
     // 丢包：发送端看 remote-inbound-rtp，接收端看 inbound-rtp
@@ -117,7 +139,8 @@ export class StatsHub {
     }
     snap.bitrate = rateOf(prev ? { ...prev.rtp, timestamp: prev.ts } : null, { ...rtp, timestamp: snap.timestamp }, direction === 'out' ? 'bytesSent' : 'bytesReceived');
     if (!snap.bitrate && prev?.bitrate) snap.bitrate = prev.bitrate;
-    prevMap.set(peerId, { rtp: { ...rtp, timestamp: snap.timestamp, bytesSent: snap.bytes, bytesReceived: snap.bytes }, ts: snap.timestamp, bitrate: snap.bitrate });
+    prevMap.set(peerId, { rtp: { ...rtp, timestamp: snap.timestamp, bytesSent: snap.bytes, bytesReceived: snap.bytes }, audio: audioRtp ? { ...audioRtp } : null, ts: snap.timestamp, bitrate: snap.bitrate });
+    if (audioOnly) return snap;
     // 质量评分
     const preset = getPreset(this.getPresetKey());
     const fpsRatio = preset.fps > 0 ? clamp((snap.fps || 0) / preset.fps, 0, 1) : 1;
@@ -206,4 +229,17 @@ export function describeLimit(limit) {
     case 'other': return '其它原因受限';
     default: return '无限制';
   }
+}
+
+/** 把 audio-only 连接的音频统计合并进该观看者的条目（保留视频字段） */
+function mergeAudio(map, peerId, audio) {
+  if (!audio) return;
+  const existing = map.get(peerId) || {};
+  map.set(peerId, {
+    ...existing,
+    hasAudio: true,
+    audioBytes: audio.audioBytes,
+    audioPackets: audio.audioPackets,
+    audioBitrate: audio.audioBitrate,
+  });
 }

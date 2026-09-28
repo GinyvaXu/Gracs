@@ -97,6 +97,7 @@ export function renderStats(samples, { names = new Map(), sharing = false, encod
   // 影院模式（WebSocket 中继）观看卡片
   for (const item of cinema) {
     const s = item.stats || {};
+    const audio = item.audio || null;
     body.append(el('div', { class: 'stat-card' },
       el('h4', {},
         el('span', { text: `🎬 ${item.name}（影院）` }),
@@ -106,6 +107,7 @@ export function renderStats(samples, { names = new Map(), sharing = false, encod
         el('span', { text: '分辨率' }), el('b', { text: s.width && s.height ? `${s.width}×${s.height}` : '—' }),
         el('span', { text: '帧率' }), el('b', { text: s.fps ? s.fps + ' fps' : '—' }),
         el('span', { text: '码率' }), el('b', { text: s.kbps ? s.kbps + ' kbps' : '—' }),
+        el('span', { text: '声音' }), el('b', { text: audio?.hasAudio ? (audio.audioBitrate ? '🔊 ' + fmtBitrate(audio.audioBitrate) : '🔊 已接通') : '🔇 无音轨' }),
         el('span', { text: '解码耗时' }), el('b', { text: s.decodeMs != null ? s.decodeMs + ' ms' : '—' }),
         el('span', { text: '已显示帧' }), el('b', { text: String(s.displayed ?? s.decoded ?? 0) }),
         el('span', { text: '丢帧' }), el('b', { text: String(s.dropped ?? 0) }),
@@ -140,6 +142,7 @@ export function renderStats(samples, { names = new Map(), sharing = false, encod
         el('span', { text: '延迟 RTT' }), el('b', { text: s.rtt != null ? Math.round(s.rtt * 1000) + ' ms' : '—' }),
         el('span', { text: '丢包' }), el('b', { text: (s.loss ?? 0).toFixed(1) + ' %' }),
         el('span', { text: '链路' }), el('b', { text: s.relay ? '中继（TURN）' : 'P2P 直连' }),
+        el('span', { text: '声音' }), el('b', { text: s.hasAudio ? (s.audioBitrate ? '🔊 ' + fmtBitrate(s.audioBitrate) : (s.audioPackets ? '🔊 已接通' : '🔊 已连接（暂无数据）')) : '🔇 无音轨' }),
         el('span', { text: '拥塞原因' }), el('b', { text: describeLimit(s.limit) }),
         el('span', { text: '编码' }), el('b', { text: s.codec || '—' }),
       ),

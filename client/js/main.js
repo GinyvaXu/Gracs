@@ -623,10 +623,15 @@ async function startShareFlow(stream, meta, modeOverride = null) {
     });
     ui.shareControlState({ sharing: true, mode: state.local.mode, preset: state.preset, statusText: shareStatusText() });
     renderStage();
-    if (!meta.hasAudio && $('#share-audio')?.checked && state.local.mode === 'webrtc') {
-      toast('未采集到系统声音（部分系统/浏览器需共享整个屏幕并勾选声音）', { ms: 5200 });
+    // 声音状态提示（拿不到时给出可操作原因，而不是静默无声）
+    if (meta.audioNote) {
+      toast(meta.audioNote, { ms: 12_000, kind: 'error' });
+    } else if (!meta.hasAudio && $('#share-audio')?.checked) {
+      toast('本次共享没有声音：系统未提供音轨（可尝试「整个屏幕」+ 勾选共享音频）', { ms: 9000, kind: 'error' });
+    } else if (meta.hasAudio) {
+      toast('共享已开始（含系统声音），观看端可听到；本机预览静音属正常', { kind: 'ok', ms: 5000 });
     } else {
-      toast('共享已开始' + (meta.hasAudio ? '（含系统声音）' : ''), { kind: 'ok' });
+      toast('共享已开始（仅画面）', { kind: 'ok' });
     }
   } catch (err) {
     console.error(err);
@@ -640,7 +645,8 @@ function shareStatusText() {
   const presetLabel = PRESETS[state.local.preset]?.label || '';
   const modeLabel = state.local.mode === 'cinema' ? '影院模式' : '标准链路';
   const size = state.local.meta.width && state.local.meta.height ? `${state.local.meta.width}×${state.local.meta.height}` : '';
-  return `正在共享 · ${modeLabel} · ${presetLabel}${size ? ' · ' + size : ''}`;
+  const audio = state.local.meta.hasAudio ? ' · 🔊 系统声音' : ' · 🔇 无系统声音';
+  return `正在共享 · ${modeLabel} · ${presetLabel}${size ? ' · ' + size : ''}${audio}`;
 }
 
 async function stopShare(reason, { silent = false } = {}) {
@@ -784,7 +790,7 @@ function onStatsSample(samples) {
       sharing: !!state.local,
       cinema: [...state.remotes.entries()]
         .filter(([, r]) => r.cinema?.stats)
-        .map(([id, r]) => ({ id, name: names().get(id) || r.username, stats: r.cinema.stats })),
+        .map(([id, r]) => ({ id, name: names().get(id) || r.username, stats: r.cinema.stats, audio: samples.out.get(id) || samples.in.get(id) || null })),
       encoder: state.local ? {
         mode: state.local.mode,
         codec: state.local.cinema?.codecInfo?.label || webrtcPreferredCodec(state.settings.codecPreference).label,
@@ -822,7 +828,7 @@ function toggleStatsPanel(force) {
       sharing: !!state.local,
       cinema: [...state.remotes.entries()]
         .filter(([, r]) => r.cinema?.stats)
-        .map(([id, r]) => ({ id, name: names().get(id) || r.username, stats: r.cinema.stats })),
+        .map(([id, r]) => ({ id, name: names().get(id) || r.username, stats: r.cinema.stats, audio: state.statsSamples.out.get(id) || state.statsSamples.in.get(id) || null })),
       encoder: state.local ? {
         mode: state.local.mode,
         codec: state.local.cinema?.codecInfo?.label || '—',
@@ -1069,8 +1075,8 @@ window.__ginyTest = {
     $('#input-username').value = nick;
     return enterRoom();
   },
-  /** 用 canvas 合成画面模拟「屏幕共享」，用于链路自测（无需真实屏幕授权） */
-  fakeShare: async ({ mode = 'webrtc', width = 1280, height = 720, fps = 30, text = 'GinyScreen 测试画面' } = {}) => {
+  /** 用 canvas 合成画面模拟「屏幕共享」，用于链路自测（无需真实屏幕授权）；tone=true 时附带合成音轨 */
+  fakeShare: async ({ mode = 'webrtc', width = 1280, height = 720, fps = 30, text = 'GinyScreen 测试画面', tone = false } = {}) => {
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -1092,10 +1098,23 @@ window.__ginyTest = {
     const stream = canvas.captureStream(fps);
     stream.getVideoTracks()[0].addEventListener('ended', () => clearInterval(timer));
     state.local?.stream?.addEventListener('ended', () => clearInterval(timer));
+    if (tone) {
+      const ac = new AudioContext();
+      await ac.resume().catch(() => {});
+      const osc = ac.createOscillator();
+      osc.frequency.value = 440;
+      const gain = ac.createGain();
+      gain.gain.value = 0.12;
+      const dest = ac.createMediaStreamDestination();
+      osc.connect(gain);
+      gain.connect(dest);
+      osc.start();
+      for (const t of dest.stream.getAudioTracks()) stream.addTrack(t);
+    }
     await startShareFlow(stream, {
-      width, height, fps, title: '测试画面', hasAudio: false,
+      width, height, fps, title: '测试画面', hasAudio: stream.getAudioTracks().length > 0,
     }, mode);
-    return { ok: true, mode: state.local?.mode, size: `${width}x${height}`, fps };
+    return { ok: true, mode: state.local?.mode, size: `${width}x${height}`, fps, audio: stream.getAudioTracks().length };
   },
   stopShare: () => stopShare('测试结束', { silent: true }),
   cinemaStats: () => state.local?.cinema?.stats || null,

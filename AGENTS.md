@@ -81,9 +81,9 @@ npm run archive         # 发布归档：产物/源码快照到 versions/vX.Y.Z/
 - 构建产物一律英文命名（GinyScreen-Debug/Portable/Setup-vX.Y.Z.exe）；目录不含中文
 
 ## 当前状态
-- 版本：v2.0.0（完全重建）：零外置软件联机（内置 STUN/TURN + UPnP/NAT-PMP + IPv6/局域网直连 + 网络诊断）；
-  双链路共享（标准 WebRTC 优化 / 影院模式 WebCodecs 中继）；质量面板（码率/帧率/RTT/丢包/直连或中继/拥塞原因）；
-  响应式 UI + PWA + 二维码邀请；移除内置麦克风语音。
+- 版本：v2.0.1（修复：全屏/画中画/音量按钮失效；系统声音采集改稳 + 声音状态可见）
+  - v2.0.0（完全重建）：零外置软件联机（内置 STUN/TURN + UPnP/NAT-PMP + IPv6/局域网直连 + 网络诊断）；
+    双链路共享（标准 WebRTC 优化 / 影院模式 WebCodecs 中继）；质量面板；响应式 UI + PWA + 二维码邀请；移除内置麦克风语音。
 - 分支：main（稳定，v1.5.1）/ develop（v2.0.0 开发）
 - 远程：https://github.com/GinyvaXu/GinyScreen（公开，自动更新依赖公开访问 update.json 与 Releases 资产）
 - 自动更新：桌面安装版内置 updater.js（多源清单 + NSIS 静默升级），清单为根目录 update.json

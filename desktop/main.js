@@ -251,6 +251,7 @@ function wireDisplayCapture() {
         thumbnail: src.thumbnail && !src.thumbnail.isEmpty() ? src.thumbnail.toDataURL() : '',
       }));
       pendingDisplayCapture = { callback, audioRequested: request.audioRequested, sources };
+    logger.work(`屏幕采集请求：来源候选 ${sources.length} 个 · 页面请求音频=${request.audioRequested ? '是' : '否'}`);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('gv:display-source-list', list);
       } else {
@@ -287,6 +288,7 @@ function wireDisplayCapture() {
       video: source,
       audio: pending.audioRequested ? 'loopback' : undefined,
     });
+    logger.work(`屏幕采集选择：${source.name}（${source.type}）· 系统声音=${pending.audioRequested ? 'loopback 回环采集（保留本机回放）' : '关闭（页面未请求音频）'}`);
   });
 
   // 停止共享时恢复被静音的其他应用

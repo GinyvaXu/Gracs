@@ -33,16 +33,25 @@ export async function startScreenShare({ presetKey = DEFAULT_PRESET, withAudio =
   }
   if (window.gvDesktop) video.cursor = 'always';
 
-  const constraints = { video, audio: withAudio ? { echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false };
+  // 注意：audio 用布尔 true —— 部分浏览器/Electron 对「带约束的 audio 请求」处理不一致，
+  // 先按最稳的方式拿到音轨，再在采集后尝试关闭浏览器音频处理（失败不影响）。
+  const constraints = { video, audio: !!withAudio };
   if (sourceId && window.gvDesktop) constraints.video = { ...video, mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId } };
 
   const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+
+  const videoTrack = stream.getVideoTracks()[0];
+  const settings = videoTrack?.getSettings?.() || {};
+  const audioTracks = stream.getAudioTracks();
+  if (withAudio && audioTracks.length) {
+    for (const track of audioTracks) {
+      try { await track.applyConstraints({ echoCancellation: false, noiseSuppression: false, autoGainControl: false }); } catch { /* 不支持则保持默认处理 */ }
+    }
+  }
   for (const track of stream.getVideoTracks()) {
     track.contentHint = preset.hint;
     track.addEventListener('ended', () => stream.dispatchEvent(new Event('userstopped')), { once: true });
   }
-  const videoTrack = stream.getVideoTracks()[0];
-  const settings = videoTrack?.getSettings?.() || {};
   return {
     stream,
     preset,
@@ -51,9 +60,19 @@ export async function startScreenShare({ presetKey = DEFAULT_PRESET, withAudio =
       height: settings.height || preset.height || 0,
       fps: settings.frameRate ? Math.round(settings.frameRate) : preset.fps,
       title: videoTrack?.label || '屏幕',
-      hasAudio: stream.getAudioTracks().length > 0,
+      hasAudio: audioTracks.length > 0,
+      displaySurface: settings.displaySurface || '',
+      audioNote: withAudio && !audioTracks.length ? describeMissingAudio(settings) : '',
     },
   };
+}
+
+/** 未拿到系统声音时，按「共享来源类型」给出可操作的提示 */
+function describeMissingAudio(settings) {
+  const surface = settings?.displaySurface;
+  if (surface === 'browser') return '没有拿到声音：共享的是「标签页」，请在系统弹窗里勾选「同时共享标签页音频」后重试';
+  if (surface === 'window') return '没有拿到声音：Windows 上共享「窗口」通常无法采集声音，请改选「整个屏幕」并在系统弹窗里勾选「共享系统音频」';
+  return '没有拿到系统声音：请重新共享，并在系统弹窗里勾选「共享系统音频」（Edge/Chrome 仅「整个屏幕 / 标签页」支持）';
 }
 
 /** 共享中切换画质：更新采集端约束（分辨率跟随 / 帧率实时生效） */
