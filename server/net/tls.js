@@ -6,7 +6,9 @@ import selfsigned from 'selfsigned';
 import { listAddresses } from './interfaces.js';
 import { logger } from '../logger.js';
 
-const CERT_DIR = join(process.cwd(), 'temp', 'certs');
+// 证书目录：优先 GV_CERT_DIR（桌面版指向 exe 旁可写目录，asar 内不可写），
+// 其次 GV_STATE_DIR/temp/certs，最后项目 temp/certs（CLI 默认）。
+const CERT_DIR = process.env.GV_CERT_DIR || join(process.env.GV_STATE_DIR || process.cwd(), 'temp', 'certs');
 const CERT_FILE = join(CERT_DIR, 'auto-cert.pem');
 const KEY_FILE = join(CERT_DIR, 'auto-key.pem');
 const META_FILE = join(CERT_DIR, 'auto-cert.json');

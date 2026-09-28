@@ -132,6 +132,9 @@ async function bootstrap() {
   const isPackaged = app.isPackaged;
   const logDir = resolveLogDir(isPackaged);
   process.env.LOG_DIR = logDir;
+  // 可写状态目录：打包后 asar 内不可写，证书/中继密钥等持久化文件放这里
+  process.env.GV_STATE_DIR = logDir;
+  process.env.GV_CERT_DIR = join(logDir, 'certs');
   process.env.NODE_ENV = isDebugBuild ? 'debug' : 'production';
   process.env.DEBUG_LOG = isDebugBuild ? '1' : '0';
 

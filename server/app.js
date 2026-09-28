@@ -399,10 +399,13 @@ function rangePorts([from, to]) {
   return out;
 }
 
-/** TURN 密钥持久化（重启后旧凭据仍可用；也可用环境变量固定） */
+/** TURN 密钥持久化（重启后旧凭据仍可用；也可用环境变量固定）
+ *  优先 GV_STATE_DIR（桌面版指向可写目录：安装版 asar 内不可写），否则项目 temp/
+ */
 function loadOrCreateTurnSecret() {
   if (process.env.TURN_SECRET) return process.env.TURN_SECRET;
-  const file = join(ROOT, 'temp', 'turn-secret.txt');
+  const stateDir = process.env.GV_STATE_DIR || join(ROOT, 'temp');
+  const file = join(stateDir, 'turn-secret.txt');
   try {
     if (existsSync(file)) {
       const s = readFileSync(file, 'utf8').trim();
