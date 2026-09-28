@@ -1,7 +1,7 @@
 {
   "name": "ginyscreen",
-  "version": "1.4.1",
-  "description": "GinyScreen - 一起看屏幕：屏幕共享(含系统声音) · 房间 · WebRTC P2P mesh",
+  "version": "2.0.0",
+  "description": "GinyScreen - 一起看屏幕：零外置软件联机的屏幕共享（WebRTC + WebCodecs 影院模式 + 内置中继 + UPnP/IPv6）",
   "main": "desktop/main.js",
   "type": "module",
   "private": true,
@@ -23,13 +23,17 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@achingbrain/nat-port-mapper": "^4.0.5",
     "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "qrcode-generator": "^2.0.4",
+    "selfsigned": "^5.5.0",
+    "socket.io": "^4.7.5",
+    "turn-server": "^0.6.6"
   },
   "devDependencies": {
-    "socket.io-client": "^4.8.3",
     "electron": "^43.3.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "socket.io-client": "^4.8.3"
   },
   "build": {
     "appId": "com.ginyscreen.app",

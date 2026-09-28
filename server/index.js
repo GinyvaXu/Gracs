@@ -1,59 +1,69 @@
-// index.js — GinyScreen 信令服务器 CLI 入口（复用 app.js 的可嵌入启动函数）
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { networkInterfaces } from 'node:os';
+// index.js — GinyScreen 服务器 CLI 入口（浏览器版：npm start）
 import { startGinyScreenServer } from './app.js';
 import { logger } from './logger.js';
+import { lanIPv4List, globalIPv6List } from './net/interfaces.js';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 3000);
-const HOST = process.env.HOST || '::';   // 双栈监听（IPv4 + IPv6）
-const useHttps = process.env.HTTPS === '1';
+const HOST = process.env.HOST || '::';              // 双栈监听（IPv4 + IPv6）
+const NO_TURN = process.env.NO_TURN === '1';
+const NO_GATEWAY = process.env.NO_GATEWAY === '1';
 
-// STUN/TURN 配置: 默认 Google STUN; 自建 TURN 通过环境变量注入
-const iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
-const TURN_URL = process.env.TURN_URL;
-const TURN_USER = process.env.TURN_USER;
-const TURN_PASS = process.env.TURN_PASS;
-if (TURN_URL && TURN_USER && TURN_PASS) {
-  iceServers.push({ urls: TURN_URL, username: TURN_USER, credential: TURN_PASS });
+// 外部 TURN（可选）：TURN_URL / TURN_USER / TURN_PASS，与内置中继并存
+const extraIceServers = [];
+if (process.env.TURN_URL && process.env.TURN_USER && process.env.TURN_PASS) {
+  extraIceServers.push({ urls: process.env.TURN_URL, username: process.env.TURN_USER, credential: process.env.TURN_PASS });
 }
 
-let serverHandle;
+let handle;
 try {
-  serverHandle = await startGinyScreenServer({ port: PORT, host: HOST, useHttps, iceServers });
+  handle = await startGinyScreenServer({
+    port: PORT,
+    host: HOST,
+    enableTurn: !NO_TURN,
+    enableGateway: !NO_GATEWAY,
+    iceServers: extraIceServers,
+    retryOnBusy: false,
+  });
 } catch (err) {
   logger.error('服务器启动失败:', err);
   process.exit(1);
 }
 
-const { server, port } = serverHandle;
-const proto = useHttps ? 'https' : 'http';
+const { port, httpsPort } = handle;
 logger.work('══════════════════════════════════════════');
-logger.work('  🖥️ GinyScreen 屏幕共享服务器已启动 (Debug 版日志已开启)');
-logger.work(`  日志目录: ${process.env.LOG_DIR || join(process.cwd(), 'temp', 'logs')}`);
-logger.work(`  本机: ${proto}://localhost:${port}`);
-const nets = getLanAddresses();
-if (nets.length) {
-  logger.work(`  局域网: ${proto}://${nets[0]}:${port}`);
-  if (!useHttps) {
-    logger.work('  ⚠️  非本机访问需 HTTPS 才能共享屏幕（安全上下文）:');
-    logger.work('     npm run certs 生成证书后，HTTPS=1 npm start');
-  }
-}
-logger.work(`  ICE: ${JSON.stringify(iceServers)}`);
+logger.work('  🖥️ GinyScreen 屏幕共享服务器已启动');
+logger.work(`  日志目录: ${process.env.LOG_DIR || `${process.cwd()}\\temp\\logs`}`);
+logger.work(`  本机访问: http://localhost:${port}`);
+const lan = lanIPv4List();
+for (const ip of lan) logger.work(`  局域网:   http://${ip}:${port}`);
+const ipv6 = globalIPv6List();
+for (const ip of ipv6.slice(0, 3)) logger.work(`  IPv6:     http://[${ip}]:${port}`);
+if (httpsPort) logger.work(`  HTTPS:    https://localhost:${httpsPort}（局域网其他电脑共享屏幕需用它）`);
+logger.work('  正在打通公网入口与中继服务（异步，稍后见诊断信息）…');
 logger.work('══════════════════════════════════════════');
+logger.work('  💡 把上面的地址发给好友即可加入；打开「🌐 网络」可查看完整诊断');
 
-function getLanAddresses() {
-  const nets = [];
-  for (const list of Object.values(networkInterfaces())) {
-    for (const net of list ?? []) {
-      if (net.internal || net.address === '::1' || net.address.startsWith('fe80')) continue;
-      nets.push(net.family === 'IPv6' ? `[${net.address}]` : net.address);
-    }
+// 网络初始化完成后打印公网入口
+handle.netInit.then(() => {
+  const g = handle.network.gateway;
+  if (g?.ok && g.externalIp) {
+    const tcp = (g.mappings || []).find((m) => m.protocol === 'tcp' && m.internalPort === port);
+    logger.work(`  ✅ 公网入口: http://${g.externalIp}:${tcp?.externalPort || port}（已自动映射，好友无需安装任何软件）`);
+  } else if (g && !g.ok) {
+    logger.work(`  ⚠️  公网端口映射未生效：${g.error || '路由器未开启 UPnP'}`);
+    logger.work('      → 可用 IPv6 直连，或在路由器开启 UPnP/NAT-PMP；高级备选见「网络」面板');
   }
-  return nets;
+  const t = handle.network.turn;
+  if (t?.running) logger.work(`  ✅ 中继服务: UDP/TCP ${t.port}（严格网络自动兜底）`);
+});
+
+async function shutdown(signal) {
+  logger.work(`收到 ${signal}，正在退出…`);
+  try { await handle.stop(); } catch { /* 忽略 */ }
+  process.exit(0);
 }
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // 未捕获异常/拒绝 → 写入报错日志（Debug 版重点）
 process.on('uncaughtException', (err) => {
