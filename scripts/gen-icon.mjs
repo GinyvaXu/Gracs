@@ -186,7 +186,38 @@ writeFileSync(join(assetsDir, 'icon.png'), png256);
 writeFileSync(join(assetsDir, 'icon.ico'), encodeIco(256, png256));
 writeFileSync(join(assetsDir, 'tray.png'), encodePng(32, draw(32)));
 
+// ── PWA 图标（客户端可直接安装到桌面/主屏）──
+const clientAssets = join(__dirname, '..', 'client', 'assets');
+mkdirSync(clientAssets, { recursive: true });
+writeFileSync(join(clientAssets, 'icon-192.png'), encodePng(192, draw(192)));
+writeFileSync(join(clientAssets, 'icon-512.png'), encodePng(512, draw(512)));
+// maskable：内容缩到 78% 居中，四周留安全边距（Android 自适应图标要求）
+function drawMaskable(size) {
+  const inner = Math.round(size * 0.78);
+  const rgba = new Uint8Array(size * size * 4);
+  const off = Math.round((size - inner) / 2);
+  const bg = [11, 13, 20, 255];
+  for (let i = 0; i < rgba.length; i += 4) {
+    rgba[i] = bg[0]; rgba[i + 1] = bg[1]; rgba[i + 2] = bg[2]; rgba[i + 3] = 255;
+  }
+  const art = draw(inner);
+  for (let y = 0; y < inner; y++) {
+    for (let x = 0; x < inner; x++) {
+      const s = (y * inner + x) * 4;
+      const d = ((y + off) * size + (x + off)) * 4;
+      const a = art[s + 3] / 255;
+      rgba[d] = Math.round(art[s] * a + rgba[d] * (1 - a));
+      rgba[d + 1] = Math.round(art[s + 1] * a + rgba[d + 1] * (1 - a));
+      rgba[d + 2] = Math.round(art[s + 2] * a + rgba[d + 2] * (1 - a));
+      rgba[d + 3] = 255;
+    }
+  }
+  return rgba;
+}
+writeFileSync(join(clientAssets, 'icon-maskable-512.png'), encodePng(512, drawMaskable(512)));
+
 console.log('已生成:');
 console.log('  assets/icon.png (256x256)');
 console.log('  assets/icon.ico');
 console.log('  assets/tray.png (32x32)');
+console.log('  client/assets/icon-192.png / icon-512.png / icon-maskable-512.png (PWA)');
