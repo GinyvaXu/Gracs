@@ -744,7 +744,9 @@ function renderStage() {
 function badgeFor(id, stats) {
   if (!stats) {
     const share = state.shares.get(id);
-    return { text: share ? (share.mode === 'cinema' ? '影院模式 · 连接中' : '连接中') : '连接中', level: 'fair' };
+    const settings = state.remotes.get(id)?.stream?.getVideoTracks?.()[0]?.getSettings?.();
+    const size = settings?.width && settings?.height ? `${settings.width}×${settings.height} · ` : '';
+    return { text: size + (share ? (share.mode === 'cinema' ? '影院模式 · 连接中' : '连接中') : '连接中'), level: 'fair' };
   }
   const parts = [];
   if (stats.width && stats.height) parts.push(`${stats.height}p`);
