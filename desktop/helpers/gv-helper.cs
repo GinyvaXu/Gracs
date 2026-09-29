@@ -8,7 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Windows.Automation;
 
-// gv-helper.exe — GinyScreen 系统助手（本机运行，无 GUI）
+// gv-helper.exe — Gracs 系统助手（本机运行，无 GUI）
 // 子命令:
 //   audio list                       列出当前默认播放设备上的音频会话
 //   audio mute-others <pid> <tsv>    静音除 <pid> 外所有会话，快照存 <tsv>

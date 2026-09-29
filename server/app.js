@@ -27,7 +27,7 @@ let version = '0.0.0';
 try { version = readFileSync(join(ROOT, 'VERSION'), 'utf8').trim(); } catch { /* 快照缺失时用默认值 */ }
 
 /**
- * 启动 GinyScreen 服务器
+ * 启动 Gracs 服务器
  * @param {object} opts
  * @param {number}  [opts.port=3000]           HTTP 监听端口
  * @param {number}  [opts.httpsPort]           HTTPS 监听端口（默认 port+1；null/0 = 不启用）
@@ -42,7 +42,7 @@ try { version = readFileSync(join(ROOT, 'VERSION'), 'utf8').trim(); } catch { /*
  * @param {Function}[opts.onNetworkReady]      网络初始化完成回调（桌面壳可用于刷新状态）
  * @returns {Promise<object>} 服务器句柄 { server, httpsServer, io, app, port, httpsPort, network, doctor, stop }
  */
-export async function startGinyScreenServer(opts = {}) {
+export async function startGracsServer(opts = {}) {
   const port = opts.port ?? 3000;
   const host = opts.host ?? '::';
   const enableHttps = opts.enableHttps ?? true;
@@ -241,8 +241,8 @@ export async function startGinyScreenServer(opts = {}) {
 
   async function initializeNetwork() {
     const ports = [];
-    ports.push({ port: actualPort, protocol: 'tcp', description: 'GinyScreen 房间服务(HTTP)' });
-    if (actualHttpsPort) ports.push({ port: actualHttpsPort, protocol: 'tcp', description: 'GinyScreen 房间服务(HTTPS)' });
+    ports.push({ port: actualPort, protocol: 'tcp', description: 'Gracs 房间服务(HTTP)' });
+    if (actualHttpsPort) ports.push({ port: actualHttpsPort, protocol: 'tcp', description: 'Gracs 房间服务(HTTPS)' });
 
     logger.work('[network] 正在检测路由器（UPnP/NAT-PMP），尝试自动打通公网入口…');
     let gateway = null;
@@ -290,9 +290,9 @@ export async function startGinyScreenServer(opts = {}) {
       // TURN 的 UDP/TCP 入口 + 中继端口段也尝试映射到公网（best-effort，失败不影响局域网）
       if (turn.ok && gateway?.ok && gateway.gateway) {
         const extraPorts = [
-          { port: turn.port, protocol: 'udp', description: 'GinyScreen 中继(UDP)' },
-          { port: turn.port, protocol: 'tcp', description: 'GinyScreen 中继(TCP)' },
-          ...rangePorts(relayPortRange).slice(0, 12).map((p) => ({ port: p, protocol: 'udp', description: 'GinyScreen 中继端口' })),
+          { port: turn.port, protocol: 'udp', description: 'Gracs 中继(UDP)' },
+          { port: turn.port, protocol: 'tcp', description: 'Gracs 中继(TCP)' },
+          ...rangePorts(relayPortRange).slice(0, 12).map((p) => ({ port: p, protocol: 'udp', description: 'Gracs 中继端口' })),
         ];
         let mapped = 0;
         for (const p of extraPorts) {

@@ -59,7 +59,7 @@ export async function startGatewayMapping(opts = {}) {
       try {
         const mapping = await gateway.map(p.port, opts.localAddress, {
           protocol: p.protocol,
-          description: p.description || 'GinyScreen',
+          description: p.description || 'Gracs',
           ttl: opts.ttlMs || DEFAULT_TTL_MS,
         });
         state.mappings.push({
@@ -120,7 +120,7 @@ async function renew(gateway, ports, opts, state) {
     try {
       await gateway.map(p.port, opts.localAddress, {
         protocol: p.protocol,
-        description: p.description || 'GinyScreen',
+        description: p.description || 'Gracs',
         ttl: opts.ttlMs || DEFAULT_TTL_MS,
       });
       logger.debug(`[gateway] 已续期 ${p.protocol}/${p.port}`);

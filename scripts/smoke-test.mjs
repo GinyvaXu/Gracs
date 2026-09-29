@@ -1,4 +1,4 @@
-// smoke-test.mjs — GinyScreen v2 端到端冒烟测试（信令 + 影院模式中继 + HTTP 接口）
+// smoke-test.mjs — Gracs v2 端到端冒烟测试（信令 + 影院模式中继 + HTTP 接口）
 // 用法：终端 1 `npm start`，终端 2 `npm test`（可用 TEST_URL 指向其它地址）
 import { io } from 'socket.io-client';
 

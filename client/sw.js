@@ -1,7 +1,7 @@
 // sw.js — 极简 Service Worker（PWA 可安装 + 离线兜底）
 // 策略：同源请求一律「网络优先，缓存兜底」——保证升级后立刻拿到新代码（开发期改完刷新即生效），
 // 断网时仍能用缓存打开界面。不做缓存优先，避免「改了代码刷新还是旧版」。
-const CACHE = 'ginyscreen-netfirst-v2';
+const CACHE = 'gracs-netfirst-v2';
 const CACHEABLE = /^\/(js|css|assets|vendor)\//;
 
 self.addEventListener('install', () => {

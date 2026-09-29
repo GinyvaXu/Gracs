@@ -1,4 +1,4 @@
-# AGENTS.md — GinyScreen 项目规则与状态（v2.0.0）
+# AGENTS.md — Gracs 项目规则与状态（v2.0.0）
 
 ## 项目简介
 自托管的**屏幕共享**工具：房间 + 多人轮流共享 + 系统声音，一起看视频/电影/游戏画面。
@@ -78,14 +78,16 @@ npm run archive         # 发布归档：产物/源码快照到 versions/vX.Y.Z/
 - 日志：Debug 版双写 work-日期.log / error-日期.log，目录由 LOG_DIR 控制；桌面版写在 exe 旁 logs\
 - 前端要求安全上下文才能采集屏幕：localhost 与桌面版天然满足；局域网其它电脑需用 HTTPS（自动生成的自签名证书，端口 = 端口+1）
 - mesh 适合 2~4 人共享/观看；更大规模需 SFU（mediasoup/LiveKit，见 docs/tech-alternatives.md）
-- 构建产物一律英文命名（GinyScreen-Debug/Portable/Setup-vX.Y.Z.exe）；目录不含中文
+- 构建产物一律英文命名（Gracs-Debug/Portable/Setup-vX.Y.Z.exe）；目录不含中文
 
 ## 当前状态
-- 版本：v2.0.1（修复：全屏/画中画/音量按钮失效；系统声音采集改稳 + 声音状态可见）
+- 版本：v2.1.0（**更名 Gracs / GRACS / 格瑞克斯**，原名 GinyScreen；功能与协议不变，产物名与 appId 变更，迁移说明见 CHANGELOG）
+  - v2.0.1：修复全屏/画中画/音量按钮失效；系统声音采集改稳 + 质量面板显示声音状态
   - v2.0.0（完全重建）：零外置软件联机（内置 STUN/TURN + UPnP/NAT-PMP + IPv6/局域网直连 + 网络诊断）；
     双链路共享（标准 WebRTC 优化 / 影院模式 WebCodecs 中继）；质量面板；响应式 UI + PWA + 二维码邀请；移除内置麦克风语音。
-- 分支：main（稳定，v1.5.1）/ develop（v2.0.0 开发）
-- 远程：https://github.com/GinyvaXu/GinyScreen（公开，自动更新依赖公开访问 update.json 与 Releases 资产）
+- 品牌：Gracs = Ginyva Remote Access Cross-network Screen-sharing Solution；缩写 GRACS；读音 /ɡræks/；中文「格瑞克斯」
+- 分支：main（稳定，v1.5.1）/ develop（v2.x 开发）
+- 远程：https://github.com/GinyvaXu/Gracs（公开；更名前为 GinyvaXu/GinyScreen，updater 同时保留旧仓库兜底源）
 - 自动更新：桌面安装版内置 updater.js（多源清单 + NSIS 静默升级），清单为根目录 update.json
 - 待办与路线图见 source/requirements.md 与 docs/gap-analysis.md
 - 高级备选联机方案（Radmin VPN / 蒲公英 / SakuraFrp）教程见 docs/fri-network.md

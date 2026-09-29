@@ -16,7 +16,7 @@ const VALID_DAYS = 825;
 
 /** 收集需要写入证书 SAN 的地址（本机 IP + localhost） */
 function collectSanAddresses() {
-  const names = new Set(['localhost', 'ginyscreen.local']);
+  const names = new Set(['localhost', 'gracs.local']);
   const ips = new Set(['127.0.0.1', '::1']);
   for (const a of listAddresses()) ips.add(a.address);
   return { names: [...names], ips: [...ips] };
@@ -51,7 +51,7 @@ export async function ensureSelfSignedCertificate() {
       ...ips.map((ip) => ({ type: 7, ip })),
     ];
     const pems = await selfsigned.generate(
-      [{ name: 'commonName', value: 'GinyScreen' }, { name: 'organizationName', value: 'GinyScreen' }],
+      [{ name: 'commonName', value: 'Gracs' }, { name: 'organizationName', value: 'Gracs' }],
       {
         days: VALID_DAYS,
         keySize: 2048,

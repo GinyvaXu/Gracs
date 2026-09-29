@@ -1,4 +1,4 @@
-// main.js — GinyScreen v2 应用编排（进入页 / 房间 / 共享 / 观看 / 诊断 / 设置）
+// main.js — Gracs v2 应用编排（进入页 / 房间 / 共享 / 观看 / 诊断 / 设置）
 import { $, $$, toast, openModal, closeModal, storage, urlParam, setUrlParams, copyText, fmtBitrate } from './core.js';
 import { fetchConfig, fetchIce, fetchNetworkReport } from './api.js';
 import { connectSignaling } from './signaling.js';
@@ -1076,7 +1076,7 @@ window.__ginyTest = {
     return enterRoom();
   },
   /** 用 canvas 合成画面模拟「屏幕共享」，用于链路自测（无需真实屏幕授权）；tone=true 时附带合成音轨 */
-  fakeShare: async ({ mode = 'webrtc', width = 1280, height = 720, fps = 30, text = 'GinyScreen 测试画面', tone = false } = {}) => {
+  fakeShare: async ({ mode = 'webrtc', width = 1280, height = 720, fps = 30, text = 'Gracs 测试画面', tone = false } = {}) => {
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;

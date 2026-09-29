@@ -1,5 +1,5 @@
 // rooms.js — 房间 / 成员 / 共享状态（内存态）
-// GinyScreen v2：一个服务器 = 一个房间（默认 "main"）；成员状态只有「屏幕共享」（含链路模式与画质）
+// Gracs v2：一个服务器 = 一个房间（默认 "main"）；成员状态只有「屏幕共享」（含链路模式与画质）
 // share = null | { mode:'webrtc'|'cinema', preset, title, width, height, fps, bitrate, since, cinema? }
 const MAX_USERS_PER_ROOM = 12;
 const MAX_TITLE = 40;

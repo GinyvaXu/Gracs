@@ -26,7 +26,7 @@ if (missing.length) {
 console.log(`▶ 构建 Debug 版 v${version}（控制台 + 日志 + DevTools）...`);
 const overrides = {
   'directories.output': 'build/debug',
-  'portable.artifactName': `GinyScreen-Debug-v${version}.exe`,
+  'portable.artifactName': `Gracs-Debug-v${version}.exe`,
   'win.icon': 'assets/icon.ico',
 };
 const r = spawnSync(process.execPath, [join('scripts', 'electron-builder.mjs'), '--win', 'portable'], {
@@ -38,4 +38,4 @@ if (r.status !== 0) {
   console.error('Debug 版构建失败');
   process.exit(r.status ?? 1);
 }
-console.log(`✅ Debug 版已生成: build/debug/GinyScreen-Debug-v${version}.exe`);
+console.log(`✅ Debug 版已生成: build/debug/Gracs-Debug-v${version}.exe`);

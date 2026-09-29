@@ -1,7 +1,7 @@
 {
-  "name": "GinyScreen · 一起看屏幕",
-  "short_name": "GinyScreen",
-  "description": "自托管屏幕共享：局域网 / IPv6 / 公网自动直连，零外置联机软件",
+  "name": "Gracs · 一起看屏幕",
+  "short_name": "Gracs",
+  "description": "自托管屏幕共享：局域网 / IPv6 / 公网自动直连，零外置联机软件（GRACS · 格瑞克斯）",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

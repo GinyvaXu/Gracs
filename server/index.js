@@ -1,5 +1,5 @@
-// index.js — GinyScreen 服务器 CLI 入口（浏览器版：npm start）
-import { startGinyScreenServer } from './app.js';
+// index.js — Gracs 服务器 CLI 入口（浏览器版：npm start）
+import { startGracsServer } from './app.js';
 import { logger } from './logger.js';
 import { lanIPv4List, globalIPv6List } from './net/interfaces.js';
 
@@ -16,7 +16,7 @@ if (process.env.TURN_URL && process.env.TURN_USER && process.env.TURN_PASS) {
 
 let handle;
 try {
-  handle = await startGinyScreenServer({
+  handle = await startGracsServer({
     port: PORT,
     host: HOST,
     enableTurn: !NO_TURN,
@@ -31,7 +31,7 @@ try {
 
 const { port, httpsPort } = handle;
 logger.work('══════════════════════════════════════════');
-logger.work('  🖥️ GinyScreen 屏幕共享服务器已启动');
+logger.work('  🖥️ Gracs 屏幕共享服务器已启动');
 logger.work(`  日志目录: ${process.env.LOG_DIR || `${process.cwd()}\\temp\\logs`}`);
 logger.work(`  本机访问: http://localhost:${port}`);
 const lan = lanIPv4List();

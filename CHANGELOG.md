@@ -3,6 +3,26 @@
 本项目遵循语义化版本（Semantic Versioning），版本号以根目录 `VERSION` 文件为唯一来源。
 版本发布流程见 `VERSIONING.md`。
 
+## [v2.1.0] - 2026-09-29
+
+### 重大变更（品牌更名）
+- **软件更名为 Gracs（GRACS · 格瑞克斯）**，原名 GinyScreen：
+  - 全称：**Ginyva Remote Access Cross-network Screen-sharing Solution**（Ginyva 远程接入 · 跨网络 · 屏幕共享方案）
+  - 缩写 **GRACS**：G（Ginyva）+ R（Remote 远程）+ A（Access 接入）+ C（Cross-network 跨网络）+ S（Screen-sharing 屏幕共享 / Solution 方案）
+  - 品牌写法 **Gracs**，读音 /ɡræks/（中文近似「格瑞克斯」）
+- **界面与文案**：浏览器/桌面版标题、品牌名、关于面板（含全称、缩写、读音）、托盘与弹窗、启动横幅、安装包与产物名全部更新
+- **打包产物更名**：`Gracs-Debug-vX.Y.Z.exe` / `Gracs-Portable-vX.Y.Z.exe` / `Gracs-Setup-vX.Y.Z.exe`
+- **技术标识**：npm 包名 `gracs`、Electron `appId` `com.gracs.app`、`productName` `Gracs`、TURN 域与软件标识 `gracs`、
+  自签证书 CN `Gracs`（地址指纹变化会自动重签）、Service Worker 缓存名 `gracs-*`
+- **更新链路**：清单源同时包含新仓库 `GinyvaXu/Gracs` 与旧仓库 `GinyvaXu/GinyScreen`（兜底），仓库更名期间新旧版本都能取到更新
+
+### 升级与迁移说明（重要）
+- 由于应用 ID 与安装目录名变化，**安装版升级后会出现新旧两份程序**（`Gracs` 与 `GinyScreen` 并存）：
+  新版本可正常使用，请在确认无误后手动卸载旧的 GinyScreen，避免混淆。
+- 桌面版连接配置目录随应用名变化（`%APPDATA%\Gracs`），首次启动需重新填写一次「开房间 / 连接朋友」设置；
+  浏览器版与局域网/公网地址不受影响。
+- 建议的发布顺序：**先在旧仓库名下发一版 v2.1.0**（让老客户端能自动升级），**再把 GitHub 仓库更名为 Gracs**。
+
 ## [v2.0.1] - 2026-09-28
 
 ### 修复

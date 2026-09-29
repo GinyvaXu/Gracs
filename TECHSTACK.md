@@ -1,4 +1,8 @@
-# 技术栈 — GinyScreen v2
+# TECHSTACK — Gracs（GRACS · 格瑞克斯）
+
+> **Gracs** = *Ginyva Remote Access Cross-network Screen-sharing Solution*（原名 GinyScreen，v2.1.0 起更名）。
+> 缩写 GRACS：Ginyva + Remote（远程）+ Access（接入）+ Cross-network（跨网络）+ Screen-sharing（屏幕共享，兼指 Solution）。
+> 读音 /ɡræks/，中文名「格瑞克斯」。
 
 ## 概览
 

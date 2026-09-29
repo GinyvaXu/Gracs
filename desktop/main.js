@@ -1,4 +1,4 @@
-// desktop/main.js — GinyScreen桌面版（Electron 主进程）
+// desktop/main.js — Gracs桌面版（Electron 主进程）
 // 职责：内嵌启动信令服务器 → 打开主窗口；系统托盘驻留；日志落盘（Debug 版）
 import { app, BrowserWindow, Tray, Menu, nativeImage, clipboard, session, dialog, ipcMain, shell, desktopCapturer } from 'electron';
 import { dirname, join } from 'node:path';
@@ -138,12 +138,12 @@ async function bootstrap() {
   process.env.NODE_ENV = isDebugBuild ? 'debug' : 'production';
   process.env.DEBUG_LOG = isDebugBuild ? '1' : '0';
 
-  const { startGinyScreenServer } = await import('../server/app.js');
+  const { startGracsServer } = await import('../server/app.js');
   logger = (await import('../server/logger.js')).logger;
   const cdpArg = process.argv.find((a) => a.startsWith('--remote-debugging-port='));
   if (cdpArg) logger.work('远程调试端口: ' + cdpArg);
   logger.work('══════════════════════════════════════════');
-  logger.work('  🖥️ GinyScreen 桌面版启动中 (Debug 日志已开启)');
+  logger.work('  🖥️ Gracs 桌面版启动中 (Debug 日志已开启)');
   logger.work(`  日志目录: ${logDir}`);
   logger.work('══════════════════════════════════════════');
 
@@ -163,7 +163,7 @@ async function bootstrap() {
 
   // 始终启动本地服务器：本机开服时它是房间服务器；远程模式下作为「恢复页」兜底（失败时跳回本地设置页）
   try {
-    serverHandle = await startGinyScreenServer({
+    serverHandle = await startGracsServer({
       port: connCfg.port,   // 主机自选端口（默认 3000）
       host: '::',           // 双栈监听：本机/局域网/IPv6 均可访问
       retryOnBusy: connCfg.mode === 'remote', // 本机开服端口必须严格；远程模式可自动换端口
@@ -181,7 +181,7 @@ async function bootstrap() {
     });
   } catch (err) {
     logger.error('服务器启动失败:', err);
-    dialog.showErrorBox('GinyScreen', '服务器启动失败（端口可能被占用），请查看日志：\n' + (err?.message || String(err)));
+    dialog.showErrorBox('Gracs', '服务器启动失败（端口可能被占用），请查看日志：\n' + (err?.message || String(err)));
     app.quit();
     return;
   }
@@ -202,7 +202,7 @@ async function bootstrap() {
 
   openDebugConsole(logDir);
 
-  app.setAppUserModelId('com.ginyscreen.app');
+  app.setAppUserModelId('com.gracs.app');
 
   await app.whenReady();
 
@@ -336,11 +336,11 @@ function openDebugConsole(logDir) {
   if (!app.isPackaged || !isDebugBuild) return; // 开发模式日志已在终端可见；正式版不弹控制台
   try {
     const scriptPath = join(logDir, '_debug-console.ps1');
-    const ps = `$Host.UI.RawUI.WindowTitle = 'GinyScreen Debug 控制台'
+    const ps = `$Host.UI.RawUI.WindowTitle = 'Gracs Debug 控制台'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 chcp 65001 > $null
 Write-Host '=================================================='
-Write-Host '  GinyScreen Debug 控制台 - 实时日志'
+Write-Host '  Gracs Debug 控制台 - 实时日志'
 Write-Host ('  日志目录: ' + '${logDir}')
 Write-Host '  关闭本窗口不影响程序运行；退出程序后窗口自动失效'
 Write-Host '=================================================='
@@ -383,7 +383,7 @@ function createWindow() {
     height: 820,
     minWidth: 960,
     minHeight: 640,
-    title: 'GinyScreen',
+    title: 'Gracs',
     icon: iconPath,
     backgroundColor: '#14151a',
     autoHideMenuBar: true,
@@ -397,7 +397,7 @@ function createWindow() {
   mainWindow.webContents.on('render-process-gone', (_e, details) =>
     writeCrashReport('renderer-gone', new Error(JSON.stringify(details)))
   );
-  // 远程模式：加载失败 / 返回非 GinyScreen 页面（如 SakuraFrp 501 拦截页）时跳回本地设置页
+  // 远程模式：加载失败 / 返回非 Gracs 页面（如 SakuraFrp 501 拦截页）时跳回本地设置页
   if (connCfg.mode === 'remote' && remoteOrigin) {
     remoteRecoveryShown = false;
     const wc = mainWindow.webContents;
@@ -411,7 +411,7 @@ function createWindow() {
         const u = wc.getURL();
         if (!u.startsWith(remoteOrigin)) return; // 恢复页/本地页不检查
         const isApp = await wc.executeJavaScript("!!(document.getElementById('screen-lobby')||document.getElementById('screen-room'))");
-        if (!isApp) showRemoteRecovery(`目标地址 ${u} 返回的不是 GinyScreen 界面（可能被网络拦截）`);
+        if (!isApp) showRemoteRecovery(`目标地址 ${u} 返回的不是 Gracs 界面（可能被网络拦截）`);
       } catch { /* 页面异常时保持现状 */ }
     });
   }
@@ -431,7 +431,7 @@ function createTray() {
   if (process.platform === 'darwin') return;
   const image = nativeImage.createFromPath(join(__dirname, '..', 'assets', 'tray.png'));
   tray = new Tray(image);
-  tray.setToolTip('GinyScreen');
+  tray.setToolTip('Gracs');
   refreshTrayMenu();
   tray.on('double-click', () => showMainWindow());
 }
@@ -552,7 +552,7 @@ function wireUpdater() {
     const r = await runHelper(['radmin', mode, String(name || ''), String(pwd || '')], 60_000);
     return r.ok ? { ok: true, output: r.out } : { ok: false, error: r.out || r.err || '操作失败，请查看日志' };
   });
-  // 界面内退出（帮助 → 退出 GinyScreen）
+  // 界面内退出（帮助 → 退出 Gracs）
   ipcMain.on('gv:quit', () => { quitting = true; shutdown(); });
 }
 

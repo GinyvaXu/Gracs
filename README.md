@@ -1,23 +1,30 @@
-# 🖥️ GinyScreen — 一起看屏幕
+# 🖥️ Gracs — 一起看屏幕
 
 > **自托管屏幕共享工具**：房间里谁都能开播，其他人跟着看 —— 一起看视频、电影、游戏画面。
 > **零外置联机软件**：局域网 / IPv6 / 公网端口自动打通，内置中继兜底，好友用浏览器打开地址即可加入。
 > 桌面版为 **Windows exe**（内嵌服务器，无需安装 Node.js）；浏览器版直连即可。
 
-![形态](https://img.shields.io/badge/形态-Web%20%2B%20Electron-blue) ![平台](https://img.shields.io/badge/平台-Windows%20%2F%20macOS%20%2F%20Linux%20%2F%20手机-lightgrey) ![版本](https://img.shields.io/badge/版本-v2.0.0-green) ![技术](https://img.shields.io/badge/技术-WebRTC%20%2B%20WebCodecs%20%2B%20Node.js-orange)
+**Gracs（GRACS · 格瑞克斯）** = *Ginyva Remote Access Cross-network Screen-sharing Solution*
+（Ginyva 远程接入 · 跨网络 · 屏幕共享方案），读音 /ɡræks/。
+
+![形态](https://img.shields.io/badge/形态-Web%20%2B%20Electron-blue) ![平台](https://img.shields.io/badge/平台-Windows%20%2F%20macOS%20%2F%20Linux%20%2F%20手机-lightgrey) ![版本](https://img.shields.io/badge/版本-v2.1.0-green) ![技术](https://img.shields.io/badge/技术-WebRTC%20%2B%20WebCodecs%20%2B%20Node.js-orange)
 
 ---
 
-## ✨ 这个版本（v2.0.0）做了什么
+## ✨ 核心能力
 
 | 主题 | 能力 |
 |------|------|
 | 🌐 **零外置联机软件** | 内置 **STUN/TURN 中继** + **UPnP/NAT-PMP 自动端口映射** + **IPv6 / 局域网自动直连**；开房即得可分享地址，**不再需要 Radmin / ZeroTier / 蒲公英 / 内网穿透** |
 | 🎞️ **双链路共享** | **标准链路**（WebRTC，低延迟，适合游戏/互动）与 **影院模式**（WebCodecs + 服务器中继，画质恒定不抖动，适合看电影），一键切换 |
-| 📶 **画质可控可观测** | 编解码智能优选（AV1→VP9→H.264→VP8）、**每位观看者独立码率自适应**、实时质量面板（码率/帧率/RTT/丢包/直连还是中继/拥塞原因） |
+| 📶 **画质可控可观测** | 编解码智能优选（AV1→VP9→H.264→VP8）、**每位观看者独立码率自适应**、实时质量面板（码率/帧率/RTT/丢包/直连还是中继/声音状态/拥塞原因） |
 | 🩺 **网络诊断** | 一页看懂：局域网 / IPv6 / 公网映射 / NAT 类型 / 中继状态，每条结论都带「怎么办」；支持深度检测 |
 | 📱 **全设备** | 响应式 UI，手机/平板可扫码进入观看（全屏、触摸操作、安全区域适配）；PWA 可安装到桌面/主屏 |
 | 🔇 **专注共享** | 只共享画面 + 可选系统声音；v2.0 移除了无法正常使用的内置麦克风语音 |
+
+> **v2.1.0 更名**：本软件原名 GinyScreen，自 v2.1.0 起更名为 **Gracs / GRACS（格瑞克斯）**。
+> 更名只涉及名称与打包产物（`Gracs-*.exe`），功能与协议不变；旧版本用户升级后若看到新旧两个安装，属正常现象，
+> 卸载旧版 GinyScreen 即可（详见 [CHANGELOG](CHANGELOG.md) 的迁移说明）。
 
 ---
 
@@ -25,7 +32,7 @@
 
 ### 方式一：桌面版 exe（推荐，Windows）
 
-1. 从 [GitHub Releases](https://github.com/GinyvaXu/GinyScreen/releases) 下载 **GinyScreen-Setup-v2.0.0.exe**（或便携版）
+1. 从 [GitHub Releases](https://github.com/GinyvaXu/Gracs/releases) 下载 **Gracs-Setup-v2.0.0.exe**（或便携版）
 2. 双击打开 → 输入昵称 → 进入房间
 3. 点顶栏 **🔗 邀请** → 把地址（局域网 / IPv6 / 公网任选）发给好友；也可以直接让好友**扫码进入**
 4. 点底部 **🖥️ 共享屏幕** → 选屏幕/窗口 → 大家就能看到
@@ -68,12 +75,12 @@ npm start
   好友浏览器 ◄──────┤  ① 局域网直连（同一 WiFi）    │
                     │  ② IPv6 直连（双方都有 IPv6）  │
   好友浏览器 ◄──────┤  ③ UPnP 公网端口自动映射      ├──────► 开房者电脑
-                    │  ④ 内置 TURN 中继兜底         │        （跑着 GinyScreen）
+                    │  ④ 内置 TURN 中继兜底         │        （跑着 Gracs）
   好友浏览器 ◄──────┤  ⑤ 传统组网/穿透（高级备选）   │
                     └─────────────────────────────┘
 ```
 
-- **信令 + 影院码流**：走开房者的 GinyScreen 服务器（Socket.IO）
+- **信令 + 影院码流**：走开房者的 Gracs 服务器（Socket.IO）
 - **标准链路画面/声音**：WebRTC 端到端加密，P2P 直连优先；打洞失败自动走**开房者电脑上的内置中继**（依然加密）
 - **端口映射**：启动时自动通过 UPnP-IGD / NAT-PMP 映射 信令端口、HTTPS 端口、中继端口，并定期续期
 - **自签名 HTTPS**：自动生成（覆盖本机所有地址），让局域网其他电脑也能共享屏幕（浏览器要求安全上下文）
@@ -114,9 +121,9 @@ npm start
 
 | 形态 | 文件 | 说明 |
 |------|------|------|
-| 🐞 Debug 版 | `GinyScreen-Debug-vX.Y.Z.exe` | 每次迭代发布，带实时日志控制台 + DevTools，用于试用/报障 |
-| 🧳 便携版 | `GinyScreen-Portable-vX.Y.Z.exe` | 免安装，双击即用 |
-| 📦 安装版 | `GinyScreen-Setup-vX.Y.Z.exe` | NSIS 安装器，支持自动更新 |
+| 🐞 Debug 版 | `Gracs-Debug-vX.Y.Z.exe` | 每次迭代发布，带实时日志控制台 + DevTools，用于试用/报障 |
+| 🧳 便携版 | `Gracs-Portable-vX.Y.Z.exe` | 免安装，双击即用 |
+| 📦 安装版 | `Gracs-Setup-vX.Y.Z.exe` | NSIS 安装器，支持自动更新 |
 
 - **日志**：exe 旁 `logs\`（工作日志 / 报错日志 / 崩溃报告）
 - **托盘**：关闭窗口最小化到托盘；托盘菜单可「打开主界面 / 复制访问地址（优先公网入口）/ 返回服务器设置 / 退出」
@@ -138,9 +145,9 @@ npm start
 
 | 命令 | 产物 | 用途 |
 |------|------|------|
-| `npm run dist:debug` | `build/debug/GinyScreen-Debug-vX.Y.Z.exe` | **每次迭代必出**，供试用/报障 |
-| `npm run dist:portable` | `build/GinyScreen-Portable-vX.Y.Z.exe` | 功能验证通过后发布 |
-| `npm run dist:installer` | `build/GinyScreen-Setup-vX.Y.Z.exe` | 功能验证通过后发布 |
+| `npm run dist:debug` | `build/debug/Gracs-Debug-vX.Y.Z.exe` | **每次迭代必出**，供试用/报障 |
+| `npm run dist:portable` | `build/Gracs-Portable-vX.Y.Z.exe` | 功能验证通过后发布 |
+| `npm run dist:installer` | `build/Gracs-Setup-vX.Y.Z.exe` | 功能验证通过后发布 |
 | `npm run finalize` | 复制 exe 到 `installer\` | 交付归档 |
 | `npm run archive` | 归档到 `versions/vX.Y.Z/` | 版本归档（源码快照 + 产物） |
 | `npm run icon` | 重新生成图标（含 PWA 图标） | 换肤时使用 |
@@ -169,7 +176,7 @@ npm run archive         # 归档到 versions/vX.Y.Z/（ProjectDock semver：dist
 ## 📁 项目结构
 
 ```
-GinyScreen/
+Gracs/
 ├── server/                     # 信令服务器 + 网络能力层
 │   ├── index.js                # CLI 入口（npm start）
 │   ├── app.js                  # 可嵌入启动（HTTP/HTTPS + Socket.IO + API + 网络初始化）
@@ -240,9 +247,11 @@ npm test
 
 | 版本 | 说明 |
 |------|------|
+| v2.1.0 | **更名 Gracs / GRACS（格瑞克斯）**：品牌、界面、文档与打包产物（`Gracs-*.exe`）统一更名；安装目录与应用 ID 随之变化（升级后请卸载旧版 GinyScreen）；协议与功能不变 |
+| v2.0.1 | 修复全屏/画中画/音量按钮失效；系统声音采集改稳 + 声音状态可见（质量面板「声音」行） |
 | v2.0.0 | **完全重建**：零外置软件联机（内置中继 + UPnP + IPv6）；双链路共享（WebRTC 优化 + 影院模式）；质量面板 + 网络诊断；响应式 UI 与 PWA；移除内置语音 |
 | v1.5.1 | Radmin 联机自动启动与指引优化（自动更新清单） |
 | v1.4.0 | 内置语音（麦克风+说话指示+独立音量+AEC）、Radmin VPN 内嵌联机、全屏/画中画/画面比例、更新链路加固 |
 | v1.3.0 | 取消房间号：单服务器单房间；首页直接填 IP:端口加入 |
-| v1.0.0 | 全面重做 GinyScreen：移除语音通话，专注屏幕共享；影院式 UI |
+| v1.0.0 | 全面重做（当时更名 GinyScreen）：移除语音通话，专注屏幕共享；影院式 UI |
 | v0.x | 早期版本（GinyVoC 时代，语音频道 + 屏幕共享） |

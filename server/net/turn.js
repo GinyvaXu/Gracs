@@ -36,8 +36,8 @@ export async function startTurnServer(opts = {}) {
   let server;
   try {
     server = createServer({
-      software: 'GinyScreen',
-      auth: { mechanism: 'long-term', realm: 'ginyscreen', secret },
+      software: 'Gracs',
+      auth: { mechanism: 'long-term', realm: 'gracs', secret },
       // 中继套接字绑定全部网卡（LAN / 本机回环 / NAT 映射都能收到）；
       // 对外通告地址按分配来源自动选择，避免多网卡/虚拟网卡（VPN）环境通告错误地址。
       relay: { ip: '0.0.0.0', externalIp: externalIp || undefined, portRange: relayPortRange },
