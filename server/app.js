@@ -276,12 +276,14 @@ export async function startGracsServer(opts = {}) {
         relayPortRange,
         externalIp,
         lanIp: pickPrimaryLanIPv4(),
+        lanIPv6: globalIPv6List()[0] || null,
         secret: network.turnSecret,
       });
       network.turn = {
         running: turn.ok,
         port: turn.port,
         externalIp,
+        ipv6: turn.ipv6 || null,
         relayRange: turn.relayRange,
         stats: turn.stats,
         stop: turn.stop,
@@ -425,8 +427,10 @@ function buildDisplayUrls(port, httpsPort, network) {
   const lan = lanIPv4List();
   const ipv6 = globalIPv6List();
   const list = [];
-  for (const ip of lan) list.push({ url: `http://${ip}:${port}`, kind: 'lan', label: '局域网' });
-  for (const ip of ipv6) list.push({ url: `http://[${ip}]:${port}`, kind: 'ipv6', label: 'IPv6' });
+  // 局域网：最多给 2 条（按接口优先级：WiFi/以太网优先，虚拟网卡靠后）
+  for (const ip of lan.slice(0, 2)) list.push({ url: `http://${ip}:${port}`, kind: 'lan', label: '局域网' });
+  // IPv6：只给前 2 个（按接口优先级，WiFi/以太网优先），避免一次列出七八条让好友挑错
+  for (const ip of ipv6.slice(0, 2)) list.push({ url: `http://[${ip}]:${port}`, kind: 'ipv6', label: 'IPv6' });
   const tcpMap = network.gateway?.mappings?.find((m) => m.protocol === 'tcp' && m.internalPort === port);
   if (network.gateway?.ok && tcpMap?.externalIp) {
     list.push({ url: `http://${tcpMap.externalIp}:${tcpMap.externalPort || port}`, kind: 'public', label: '公网（自动映射）' });

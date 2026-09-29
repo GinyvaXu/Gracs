@@ -47,7 +47,7 @@ export function createDoctor({ getConfig }) {
       gateway,
       turn,
       nat: deepCache.value && Date.now() - deepCache.at < 120_000 ? deepCache.value : null,
-      verdict: buildVerdict({ lan, ipv6, gateway, turn, nat: deepCache.value, httpsEnabled: !!cfg.httpsPort }),
+      verdict: buildVerdict({ lan, ipv6, gateway, turn, nat: deepCache.value, httpsEnabled: !!cfg.httpsPort, port: cfg.port }),
     };
   }
 
@@ -97,7 +97,7 @@ function natP2PHint(natType, kind) {
 }
 
 /** 生成「人话」判定列表：每条都带状态与下一步动作 */
-function buildVerdict({ lan, ipv6, gateway, turn, nat, httpsEnabled }) {
+function buildVerdict({ lan, ipv6, gateway, turn, nat, httpsEnabled, port = 3000 }) {
   const items = [];
   if (lan.length) {
     items.push({
@@ -112,8 +112,9 @@ function buildVerdict({ lan, ipv6, gateway, turn, nat, httpsEnabled }) {
   if (ipv6.length) {
     items.push({
       level: 'ok',
-      title: 'IPv6 公网直连可用',
-      detail: `把 [${ipv6[0]}] 地址发给好友（双方都有 IPv6 时）可跨网络直连，无需端口映射`,
+      title: 'IPv6 公网地址可用（免端口映射）',
+      detail: `把 [${ipv6[0]}]:${port} 发给好友（双方都有 IPv6 时）可跨网络直连。`
+        + '若对方打不开：常见原因是路由器「IPv6 防火墙」拦截入站（可在路由器放行本机 IPv6，或改用公网 IPv4 / 中继）',
     });
   } else {
     items.push({
@@ -143,12 +144,19 @@ function buildVerdict({ lan, ipv6, gateway, turn, nat, httpsEnabled }) {
     const relayed = turn.stats?.bytesRelayed ? `已中继 ${Math.round(turn.stats.bytesRelayed / 1024)} KB` : '待命中';
     items.push({
       level: 'ok',
-      title: '内嵌中继服务运行中',
-      detail: `严格 NAT/防火墙下自动走中继兜底（端口 ${turn.port}，${relayed}），媒体仍为端到端加密`,
+      title: '内嵌中继服务运行中（IPv4 + IPv6 双栈）',
+      detail: `严格 NAT/防火墙下自动走中继兜底（端口 ${turn.port}${turn.ipv6 ? `，IPv6 中继 ${turn.ipv6}` : ''}，${relayed}），媒体仍为端到端加密`,
     });
   } else {
     items.push({ level: 'info', title: '中继服务未启用', detail: '如需最稳连通性可检查端口占用' });
   }
+
+  items.push({
+    level: 'info',
+    title: '连不上时先查本机防火墙',
+    detail: `Windows 防火墙需允许 Gracs（或 Node.js）在「专用/公用网络」通信，`
+      + `并放行房间端口 ${port} 与中继端口 ${turn?.port || 3478}（UDP/TCP）。首次启动的防火墙弹窗请点「允许访问」`,
+  });
 
   if (nat) {
     items.push({ level: nat.natType === 'symmetric-or-port-restricted' ? 'warn' : 'info', title: '网络属性（深度检测）', detail: nat.p2pHint });

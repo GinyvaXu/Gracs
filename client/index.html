@@ -54,8 +54,8 @@
           <input id="input-port" type="number" min="1024" max="65535" value="3000" autocomplete="off" />
         </div>
         <div class="field" id="address-field" hidden>
-          <label for="input-address">主机地址（IP:端口 或 域名:端口）</label>
-          <input id="input-address" type="text" placeholder="例如 192.168.1.5:3000" autocomplete="off" spellcheck="false" />
+          <label for="input-address">主机地址（IP:端口 / 域名:端口，IPv6 请加方括号）</label>
+          <input id="input-address" type="text" placeholder="例如 192.168.1.5:3000 或 [240e:xxxx::1]:3000" autocomplete="off" spellcheck="false" />
         </div>
 
         <button id="btn-enter" class="btn primary big block">进入房间</button>
@@ -124,6 +124,7 @@
 
       <footer class="bottombar">
         <button id="btn-share" class="btn primary share-btn">🖥️ 共享屏幕</button>
+        <button id="btn-fullscreen" class="btn" title="全屏观看当前画面（Esc 退出）">⛶ 全屏</button>
         <div class="ctl-group" id="share-controls">
           <label class="ctl">链路
             <select id="link-mode" title="标准链路延迟最低；影院模式画质最稳，适合看电影">

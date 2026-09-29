@@ -49,12 +49,18 @@ export function listAddresses() {
   return out;
 }
 
-/** 局域网 IPv4（可发给同网段好友的地址），排除虚拟网卡倾向：按接口名排序后返回 */
+/** 局域网 IPv4（可发给同网段好友的地址），排除虚拟/隧道网段，按接口名排序后返回 */
 export function lanIPv4List() {
   return listAddresses()
-    .filter((a) => a.family === 4 && !a.cgnat)
+    .filter((a) => a.family === 4 && !a.cgnat && !isBenchmarkIPv4(a.address))
     .sort((a, b) => scoreIface(a) - scoreIface(b))
     .map((a) => a.address);
+}
+
+/** 198.18.0.0/15（RFC 2544 基准测试网段）：Clash 等代理软件 TUN 网卡常用，不是真实局域网 */
+export function isBenchmarkIPv4(ip) {
+  const [a, b] = String(ip).split('.').map(Number);
+  return a === 198 && (b === 18 || b === 19);
 }
 
 function scoreIface(addr) {
@@ -67,10 +73,12 @@ function scoreIface(addr) {
   return score;
 }
 
-/** 全球单播 IPv6（可直接给公网好友，运营商普遍已分配） */
+/** 全球单播 IPv6（可直接给公网好友，运营商普遍已分配）
+ *  按接口优先级排序（WiFi/以太网优先，VPN/虚拟网卡靠后），避免把虚拟适配器地址发给好友 */
 export function globalIPv6List() {
   return listAddresses()
     .filter((a) => a.family === 6 && !isULA(a.address))
+    .sort((a, b) => scoreIface(a) - scoreIface(b))
     .map((a) => a.address);
 }
 

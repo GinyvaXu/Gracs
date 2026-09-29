@@ -137,6 +137,7 @@ function wireStaticUI() {
 
   // 房间
   $('#btn-share').addEventListener('click', toggleShare);
+  $('#btn-fullscreen')?.addEventListener('click', () => state.stage?.fullscreenFocused());
   $('#preset-select').addEventListener('change', onPresetChange);
   $('#link-mode').addEventListener('change', () => {
     state.linkMode = $('#link-mode').value;
@@ -194,19 +195,15 @@ function wireStaticUI() {
   });
   state.stage.setAspect(state.settings.aspect);
 
-  // 移动端侧栏切换
-  if (isMobile) {
-    const sidebar = $('#sidebar');
-    $('#btn-members')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      sidebar.classList.toggle('open');
-    });
-    document.addEventListener('click', (e) => {
-      if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && e.target.id !== 'btn-members') sidebar.classList.remove('open');
-    });
-  } else {
-    $('#btn-members')?.remove();
-  }
+  // 移动端侧栏切换（按钮始终渲染，由 CSS 控制显示；避免窄窗口/平板下无法打开成员列表）
+  const sidebar = $('#sidebar');
+  $('#btn-members')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    sidebar.classList.toggle('open');
+  });
+  document.addEventListener('click', (e) => {
+    if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && e.target.id !== 'btn-members') sidebar.classList.remove('open');
+  });
 
   // 错误上报
   window.addEventListener('error', (e) => {

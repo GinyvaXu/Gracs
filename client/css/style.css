@@ -36,6 +36,10 @@ body {
 }
 #app { height: 100%; }
 .screen { height: 100%; display: flex; flex-direction: column; }
+/* 移动端浏览器地址栏伸缩：用 dvh 动态视口高度，避免底部被裁掉 */
+@supports (height: 100dvh) {
+  html, body, #app { height: 100dvh; }
+}
 .dim { color: var(--dim); }
 .spacer { flex: 1; }
 .hint { color: var(--dim); font-size: 12px; margin: 6px 0 0; }
@@ -372,7 +376,32 @@ input[type="range"] { accent-color: var(--accent); }
 .source-name { display: block; padding: 8px 10px 2px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-type { display: block; padding: 0 10px 8px; font-size: 11px; color: var(--dim); }
 
-/* ── 移动端 ── */
+/* ── 伪全屏（CSS 覆盖视口；iOS 等不支持 Fullscreen API 的设备兜底）── */
+.tile.pseudo-fullscreen {
+  position: fixed; inset: 0; z-index: 400;
+  width: 100vw; height: 100vh; height: 100dvh;
+  border: none; border-radius: 0;
+  background: #000;
+}
+body.pseudo-fullscreen-active { overflow: hidden; }
+.tile.pseudo-fullscreen .tile-media, .tile.pseudo-fullscreen video, .tile.pseudo-fullscreen canvas {
+  width: 100%; height: 100%; object-fit: contain;
+}
+.pseudo-exit {
+  position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: 12px; z-index: 410;
+  background: rgba(8, 10, 16, 0.82); border: 1px solid var(--border-strong); color: var(--text);
+  padding: 8px 14px; border-radius: 999px; font-size: 13px; cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+/* ── 触摸设备：工具栏常显（没有 hover），点击区域更大 ── */
+@media (hover: none) {
+  .tile.main .tile-tools { opacity: 1; }
+  .tile-tools .icon-btn, .tile-tools select { padding: 7px 10px; font-size: 13px; }
+  .tile-volume input { width: 88px; }
+}
+button, select, input, .tile { touch-action: manipulation; }
+
 .mobile-only { display: none; }
 @media (max-width: 900px) {
   .mobile-only { display: initial; }

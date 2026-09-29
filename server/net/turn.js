@@ -27,11 +27,29 @@ export async function startTurnServer(opts = {}) {
     relayPortRange = DEFAULT_RELAY_RANGE,
     externalIp = null,
     lanIp = null,
+    lanIPv6 = null,
     secret = null,
     userQuota = 32,
     totalQuota = 128,
   } = opts;
   if (!secret) return { ok: false, port: null, error: '缺少 TURN 密钥', stats: () => ({}), stop: async () => {}, relayRange: relayPortRange };
+
+  // 中继地址：按「分配请求的地址族」决定 —— 套接字族由 requestedFamily 决定（RFC 6156），
+  // 若 IPv4 分配返回 ip:'::' 会直接 508 失败；通告地址必须与套接字族一致，否则客户端解析出错。
+  const relayForClient = (info) => {
+    if (Number(info?.requestedFamily) === 2) {
+      // 显式请求 IPv6 中继：绑定双栈、通告本机全局 IPv6
+      return { ip: '::', externalIp: lanIPv6 || undefined };
+    }
+    // 默认（IPv4 中继，含 IPv6 客户端回落到 IPv4 中继的情况）
+    const src = String(info?.source?.ip || '');
+    let advertise = externalIp || null;
+    if (!advertise) {
+      if (src === '127.0.0.1' || src === '::1' || src === '0:0:0:0:0:0:0:1' || src === '::ffff:127.0.0.1') advertise = '127.0.0.1';
+      else if (lanIp) advertise = lanIp;
+    }
+    return { ip: '0.0.0.0', externalIp: advertise || undefined };
+  };
 
   let server;
   try {
@@ -45,13 +63,8 @@ export async function startTurnServer(opts = {}) {
       // 这不影响安全模型：中继仍要求 HMAC 临时凭据 + 配额限制，仅服务本房间成员。
       allowLoopback: true,
       relayCallback: (info, cb) => {
-        const src = String(info?.source?.ip || '');
-        let advertise = externalIp || null;
-        if (!advertise) {
-          if (src === '127.0.0.1' || src === '::1' || src === '0:0:0:0:0:0:0:1') advertise = '127.0.0.1';
-          else if (lanIp) advertise = lanIp;
-        }
-        cb({ ip: '0.0.0.0', externalIp: advertise || undefined, portRange: relayPortRange });
+        const { ip, externalIp: advertise } = relayForClient(info);
+        cb({ ip, externalIp: advertise, portRange: relayPortRange });
       },
       userQuota,
       totalQuota,
@@ -80,10 +93,11 @@ export async function startTurnServer(opts = {}) {
           reject(err);
         };
         server.on('error', onError);
+        // address:'::' → 双栈监听（IPv4 + IPv6）；纯 IPv4 监听会让 IPv6 好友无法使用中继
         server.listen(
           [
-            { port: tryPort, transport: 'udp' },
-            { port: tryPort, transport: 'tcp' },
+            { port: tryPort, transport: 'udp', address: '::' },
+            { port: tryPort, transport: 'tcp', address: '::' },
           ],
           () => {
             server.off?.('error', onError);
@@ -91,12 +105,13 @@ export async function startTurnServer(opts = {}) {
           },
         );
       });
-      logger.work(`[turn] 中继服务已启动 UDP/TCP :${tryPort}（中继端口段 ${relayPortRange[0]}-${relayPortRange[1]}，外部 IP ${externalIp || '未设置'}）`);
+      logger.work(`[turn] 中继服务已启动 UDP/TCP :${tryPort}（双栈 IPv4+IPv6，中继端口段 ${relayPortRange[0]}-${relayPortRange[1]}，外部 IP ${externalIp || '未设置'}，IPv6 ${lanIPv6 || '未检测到'}）`);
       return {
         ok: true,
         port: tryPort,
         error: null,
         relayRange: relayPortRange,
+        ipv6: lanIPv6 || null,
         stats: () => server.getStats(),
         stop: () =>
           new Promise((resolve) => {
