@@ -20,8 +20,9 @@
       </div>
       <div class="field" id="mode-fields">
         <div class="mode-row">
-          <label class="mode-opt"><input type="radio" name="lobby-mode" id="mode-host" checked /> 开房间（本机）</label>
-          <label class="mode-opt"><input type="radio" name="lobby-mode" id="mode-guest" /> 加入房间</label>
+          <label class="mode-opt"><input type="radio" name="lobby-mode" id="mode-host" checked /> <span id="mode-host-label">开房间（本机）</span></label>
+          <label class="mode-opt" id="mode-guest-opt"><input type="radio" name="lobby-mode" id="mode-guest" /> 加入房间</label>
+          <label class="mode-opt"><input type="radio" name="lobby-mode" id="mode-cloud" /> ☁️ 云房间</label>
         </div>
       </div>
       <div class="field" id="port-field">
@@ -31,6 +32,10 @@
       <div class="field" id="address-field" hidden>
         <label>目标服务器地址（IP:端口）</label>
         <input id="input-address" type="text" placeholder="如 192.168.1.5:3000 或 隧道域名:端口（公网自动 HTTPS）" autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="field" id="cloud-field" hidden>
+        <label>云房间码（跨网络零配置 · 信令走 Cloudflare，免组网工具）</label>
+        <input id="input-cloud-code" type="text" maxlength="8" placeholder="加入时填房间码；创建留空，点「创建云房间」" autocomplete="off" spellcheck="false" />
       </div>
       <div class="btn-row">
         <button id="btn-create" class="btn primary">开房间</button>
@@ -42,6 +47,7 @@
       </div>
       <div id="lobby-error" class="error" hidden></div>
       <p class="hint">建议使用 Edge / Chrome。共享屏幕时可勾选「系统声音」，适合一起看视频。</p>
+      <p class="hint">☁️ 云房间：房间码进出、免组网（信令走 Cloudflare · Project4）；画面仍走 P2P 直连，打洞失败时自动走中继。</p>
       <p class="hint" id="lobby-server"></p>
     </div>
   </section>

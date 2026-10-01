@@ -1,5 +1,6 @@
 // main.js — GinyScreen 应用逻辑（房间 / 共享 / 观看 / 语音 / 联机 / 设置）
 import { connectSignaling } from './signaling.js';
+import { connectCloudSignaling } from './cloud-signal.js';
 import { MeshManager } from './webrtc.js';
 import { PRESETS, DEFAULT_PRESET, startScreenShare, applyPreset } from './screenshare.js';
 import * as ui from './ui.js';
@@ -9,6 +10,8 @@ const state = {
   username: '',
   socket: null,
   mesh: null,
+  transport: null,          // 'local' | 'cloud'（当前传输方式）
+  cloudCode: null,          // 云房间码
   config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }], version: '' },
   members: [],
   localStream: null,        // 屏幕共享流
@@ -48,12 +51,22 @@ async function boot() {
   if (params.get('recover') === '1') ui.$('#lobby-recover-banner').hidden = false;
   const autoNick = params.get('nick') || '';
   if (autoNick) ui.$('#input-username').value = autoNick;
-  if (params.get('autojoin') === '1' && autoNick) enterRoom('join');
-  else ui.showScreen('lobby');
+  const cloudCode = (params.get('cloud') || '').trim().toUpperCase();
+  if (cloudCode) {
+    ui.$('#mode-cloud').checked = true;
+    ui.$('#input-cloud-code').value = cloudCode;
+    syncLobbyModeFn?.();
+  }
+  if (params.get('autojoin') === '1' && autoNick) {
+    if (cloudCode) enterCloudRoom('join');
+    else enterRoom('join');
+  } else ui.showScreen('lobby');
 }
 
-function connect() {
-  state.socket = connectSignaling({
+let syncLobbyModeFn = null;
+
+function signalCallbacks() {
+  return {
     onState: (s) => applyRoomState(s),
     onSignal: (p) => state.mesh?.handleSignal(p.from, p.data),
     onMemberJoined: (p) => onMemberJoined(p.user),
@@ -61,8 +74,11 @@ function connect() {
     onShareUpdate: (p) => onShareUpdate(p.id, p.share),
     onVoiceUpdate: (p) => onVoiceUpdate(p.id, p.voice),
     onError: (msg) => { ui.toast(msg); setConnStatus(false); },
-  });
+  };
+}
 
+function setupSocket(socket) {
+  state.socket = socket;
   state.mesh = new MeshManager({
     socket: state.socket,
     iceServers: state.config.iceServers,
@@ -72,35 +88,84 @@ function connect() {
   });
 }
 
+function connect() {
+  state.transport = 'local';
+  setupSocket(connectSignaling(signalCallbacks()));
+}
+
+// ═══════════ 云房间（Project4 云信令）═══════════
+function getRelayUrl() {
+  const q = new URLSearchParams(location.search).get('relay');
+  if (q) return q;
+  if (state.config.cloud?.relay) return state.config.cloud.relay;
+  return 'wss://gracs.ginyva.site/ws';
+}
+
+function connectCloud() {
+  if (state.transport === 'cloud' && state.socket?.isCloud) return;
+  state.transport = 'cloud';
+  setupSocket(connectCloudSignaling(Object.assign({ getUrl: getRelayUrl }, signalCallbacks())));
+}
+
 // ═══════════ 进入页 ═══════════
 function wireLobby() {
+  const isBrowser = !window.gvDesktop?.setServerConfig;
   const modeHost = ui.$('#mode-host');
   const modeGuest = ui.$('#mode-guest');
-  function syncModeFields() {
-    const guest = modeGuest.checked;
-    ui.$('#port-field').hidden = guest;
-    ui.$('#address-field').hidden = !guest;
-    if (guest) ui.$('#input-address').focus();
+  const modeCloud = ui.$('#mode-cloud');
+  const btnCreate = ui.$('#btn-create');
+  const btnJoin = ui.$('#btn-join');
+
+  function currentMode() {
+    if (modeCloud?.checked) return 'cloud';
+    return modeGuest?.checked ? 'guest' : 'host';
   }
-  modeHost?.addEventListener('change', syncModeFields);
-  modeGuest?.addEventListener('change', syncModeFields);
-  ui.$('#btn-create').addEventListener('click', () => enterRoom('create'));
-  ui.$('#btn-join').addEventListener('click', () => enterRoom('join'));
+
+  function syncLobbyMode() {
+    const mode = currentMode();
+    ui.$('#port-field').hidden = isBrowser || mode !== 'host';
+    ui.$('#address-field').hidden = isBrowser || mode !== 'guest';
+    ui.$('#cloud-field').hidden = mode !== 'cloud';
+    if (isBrowser) {
+      btnJoin.hidden = mode !== 'cloud';
+      btnCreate.textContent = mode === 'cloud' ? '☁️ 创建云房间' : '进入房间';
+      btnJoin.textContent = '加入云房间';
+    } else {
+      btnJoin.hidden = false;
+      btnCreate.textContent = mode === 'cloud' ? '☁️ 创建云房间' : '开房间';
+      btnJoin.textContent = mode === 'cloud' ? '加入云房间' : '加入房间';
+    }
+    if (mode === 'guest') ui.$('#input-address').focus();
+    if (mode === 'cloud') ui.$('#input-cloud-code').focus();
+  }
+
+  [modeHost, modeGuest, modeCloud].forEach((r) => r?.addEventListener('change', syncLobbyMode));
+  btnCreate.addEventListener('click', () => {
+    if (currentMode() === 'cloud') enterCloudRoom('create');
+    else enterRoom('create');
+  });
+  btnJoin.addEventListener('click', () => {
+    if (currentMode() === 'cloud') enterCloudRoom('join');
+    else enterRoom('join');
+  });
   ui.$('#input-username').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') enterRoom(modeGuest?.checked ? 'join' : 'create');
+    if (e.key !== 'Enter') return;
+    if (currentMode() === 'cloud') enterCloudRoom('create');
+    else enterRoom(modeGuest?.checked ? 'join' : 'create');
   });
   ui.$('#input-port').addEventListener('keydown', (e) => { if (e.key === 'Enter') enterRoom('create'); });
   ui.$('#input-address').addEventListener('keydown', (e) => { if (e.key === 'Enter') enterRoom('join'); });
+  ui.$('#input-cloud-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') enterCloudRoom('join'); });
   ui.$('#btn-server-settings-lobby')?.addEventListener('click', openServerSettings);
-  // 浏览器版没有端口/IP 直连能力：隐藏主机/加入选择，直接进当前服务器
-  if (!window.gvDesktop?.setServerConfig) {
-    ui.$('#mode-fields').hidden = true;
-    ui.$('#port-field').hidden = true;
-    ui.$('#address-field').hidden = true;
-    ui.$('#btn-join').hidden = true;
-    ui.$('#btn-create').textContent = '进入房间';
+
+  // 浏览器版没有端口/IP 直连能力：保留「进入当前服务器」与「云房间」两种方式
+  if (isBrowser) {
+    ui.$('#mode-guest-opt').hidden = true;
+    ui.$('#mode-host-label').textContent = '进入当前服务器';
     ui.$('#btn-radmin-lobby').hidden = true;
   }
+  syncLobbyMode();
+  syncLobbyModeFn = syncLobbyMode;
 }
 
 async function enterRoom(mode) {
@@ -140,6 +205,43 @@ async function enterRoom(mode) {
   ui.showScreen('room');
   renderVoicePanel();
   if (autojoin) history.replaceState(null, '', location.pathname);
+}
+
+// 进入「云房间」（Project4 云信令：房间码进出，跨网络免组网）
+async function enterCloudRoom(kind) {
+  const username = ui.$('#input-username').value.trim() || '观众';
+  state.username = username;
+  const code = ui.$('#input-cloud-code').value.trim().toUpperCase();
+  if (kind === 'join' && !code) return showLobbyError('请输入云房间码（如 K7X2Q9）');
+  connectCloud();
+  const btn = kind === 'create' ? ui.$('#btn-create') : ui.$('#btn-join');
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = kind === 'create' ? '☁️ 创建中…' : '☁️ 加入中…';
+  try {
+    const res = kind === 'create'
+      ? await state.socket.createRoom(username)
+      : await state.socket.joinRoom(username, code);
+    if (res?.error) return showLobbyError(res.error);
+    state.cloudCode = (res.code || code).toUpperCase();
+    state.meId = state.socket.id();
+    state.members = res.roomState?.users || [];
+    ui.$('#lobby-error').hidden = true;
+    setConnStatus(true);
+    ui.renderMembers(state.members, state.meId);
+    applyRoomState(res.roomState || { users: state.members });
+    ui.showScreen('room');
+    renderVoicePanel();
+    const invite = location.origin + location.pathname + '?cloud=' + state.cloudCode;
+    if (kind === 'create') copyText(invite, '☁️ 云房间已创建 · 房间码 ' + state.cloudCode + '（邀请链接已复制）');
+    else ui.toast('已加入云房间 ' + state.cloudCode);
+    history.replaceState(null, '', location.pathname);
+  } catch (err) {
+    showLobbyError('云房间连接失败：' + (err?.message || err));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldText;
+  }
 }
 
 function showLobbyError(msg) {
@@ -531,7 +633,12 @@ function wireRoom() {
   ui.setFocusHandler((id) => { state.focused = id; renderStage(); });
 
   ui.$('#btn-copy-link').addEventListener('click', () => {
-    copyText(location.origin, '访问地址已复制（好友用它加入你的房间）');
+    if (state.transport === 'cloud' && state.cloudCode) {
+      copyText(location.origin + location.pathname + '?cloud=' + state.cloudCode,
+        '☁️ 云房间邀请链接已复制（房间码 ' + state.cloudCode + '）');
+    } else {
+      copyText(location.origin, '访问地址已复制（好友用它加入你的房间）');
+    }
   });
   ui.$('#btn-leave').addEventListener('click', leaveRoom);
   ui.$('#btn-server-settings').addEventListener('click', openServerSettings);
@@ -558,7 +665,16 @@ async function leaveRoom() {
   state.members = [];
   state.focused = null;
   ui.clearVideos();
-  await state.socket.leaveRoom();
+  const wasCloud = state.transport === 'cloud';
+  await state.socket?.leaveRoom();
+  if (wasCloud) {
+    // 云信令连接已随离开关闭：复位传输层，回大厅后按所选方式重新建立
+    state.socket = null;
+    state.mesh = null;
+    state.transport = null;
+    state.cloudCode = null;
+    connect();
+  }
   ui.showScreen('lobby');
 }
 
