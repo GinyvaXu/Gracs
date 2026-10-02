@@ -131,6 +131,8 @@ input[type="range"] { accent-color: var(--accent); }
   word-break: break-all;
 }
 .mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0; }
+/* 云房间卡片占满一行（三卡布局；不支持 :has 的旧浏览器自动回落为普通卡片） */
+.mode-cards .mode-card:has(#mode-cloud) { grid-column: 1 / -1; }
 .mode-card {
   position: relative; cursor: pointer;
   border: 1px solid var(--border); border-radius: 12px;

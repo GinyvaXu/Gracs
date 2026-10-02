@@ -86,8 +86,11 @@ export function setUplinkInfo(text) {
   if (node) node.textContent = text || '';
 }
 
-export function renderRoomInfo({ version, mode }) {
-  $('#room-info').textContent = `v${version} · ${mode === 'remote' ? '连接朋友的房间' : '本机房间'} · 画面端到端加密`;
+export function renderRoomInfo({ version, mode, code }) {
+  const where = mode === 'cloud'
+    ? `☁️ 云房间${code ? ' · ' + code : ''}`
+    : (mode === 'remote' ? '连接朋友的房间' : '本机房间');
+  $('#room-info').textContent = `v${version} · ${where} · 画面端到端加密`;
 }
 
 // ── 帮助下拉 ──

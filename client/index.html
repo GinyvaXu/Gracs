@@ -47,6 +47,12 @@
             <span class="mode-title">加入朋友</span>
             <span class="mode-desc">填主机给出的地址</span>
           </label>
+          <label class="mode-card">
+            <input type="radio" name="lobby-mode" id="mode-cloud" />
+            <span class="mode-icon">☁️</span>
+            <span class="mode-title">云房间</span>
+            <span class="mode-desc">房间码进出 · 免组网（信令走 Cloudflare）</span>
+          </label>
         </div>
 
         <div class="field" id="port-field">
@@ -56,6 +62,10 @@
         <div class="field" id="address-field" hidden>
           <label for="input-address">主机地址（IP:端口 / 域名:端口，IPv6 请加方括号）</label>
           <input id="input-address" type="text" placeholder="例如 192.168.1.5:3000 或 [240e:xxxx::1]:3000" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="field" id="cloud-field" hidden>
+          <label for="input-cloud-code">云房间码（加入时填入；创建请留空）</label>
+          <input id="input-cloud-code" type="text" maxlength="8" placeholder="如 K7X2Q9；留空则创建新房间" autocomplete="off" spellcheck="false" />
         </div>
 
         <button id="btn-enter" class="btn primary big block">进入房间</button>
