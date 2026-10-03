@@ -30,6 +30,8 @@ const state = {
   socket: null,
   mesh: null,
   cloudCode: null,         // 云房间码（云房间模式下有效）
+  cloudHosted: false,      // 页面由云信令服务托管（gracs.ginyva.site 等），进入页只保留「云房间」
+  cloudWeb: null,          // 云网页版地址（托管页或 /api/config 提供）
   stats: null,
   stage: null,
   meId: null,
@@ -67,13 +69,26 @@ async function boot() {
     state.features = cfg.features || {};
     state.maxUsers = cfg.maxUsers || 12;
     state.stunServers = cfg.stunServers || [];
+    if (!state.stunServers.length && Array.isArray(cfg.iceServers) && cfg.iceServers.length) {
+      // 云信令 /api/config 用 iceServers 字段：兼容两种写法，保证静态托管时也有 STUN
+      state.stunServers = cfg.iceServers
+        .map((s) => (typeof s === 'string' ? s : s?.urls))
+        .flat()
+        .filter(Boolean);
+    }
+    if (!isElectron && cfg.cloud?.relay) {
+      // 页面由云信令服务托管（gracs.ginyva.site）：只保留「云房间」，隐藏本机服务器入口
+      state.cloudHosted = true;
+      state.cloudWeb = cfg.cloud.web || location.origin + '/';
+    }
   } catch {
     ui.renderLobbyServer('无法读取服务器配置（可继续尝试进入房间）');
   }
 
+  if (state.cloudHosted) applyCloudHostedLobby();
   applyCodecPreference();
   refreshIceServers();   // 提前拿 ICE/TURN 配置，避免入房后第一帧连接缺服务器
-  ui.renderLobbyServer(`当前服务器：${location.origin} · v${state.version}`);
+  if (!state.cloudHosted) ui.renderLobbyServer(`当前服务器：${location.origin} · v${state.version}`);
   ui.renderEnvInfo(state.env);
   ui.showScreen('lobby');
   renderLobbyCaps();
@@ -116,6 +131,23 @@ function renderLobbyCaps() {
   }
   const codec = webrtcPreferredCodec(state.settings.codecPreference);
   node.textContent = `✅ 可以共享屏幕 · 首选编码 ${codec.label}${state.features.cinema && env.webcodecs.encode ? ' · 支持影院模式' : ''}`;
+}
+
+/** 云信令服务托管的网页版：只保留「云房间」入口（本机开服/加入朋友在公网页面上不可用） */
+function applyCloudHostedLobby() {
+  $('#mode-host')?.closest('label')?.setAttribute('hidden', '');
+  $('#mode-guest')?.closest('label')?.setAttribute('hidden', '');
+  const cloud = $('#mode-cloud');
+  if (cloud) cloud.checked = true;
+  syncLobbyMode();
+  $('#btn-network-lobby')?.setAttribute('hidden', '');
+  $('#btn-network')?.setAttribute('hidden', '');
+  document.querySelector('[data-action="open-network"]')?.setAttribute('hidden', '');
+  try {
+    ui.renderLobbyServer(`☁️ 云信令 · ${new URL(state.cloudWeb).host} · v${state.version}`);
+  } catch {
+    ui.renderLobbyServer('☁️ 云信令已就绪');
+  }
 }
 
 function wireStaticUI() {
@@ -281,7 +313,12 @@ async function enterRoom() {
     return;
   }
 
-  if (!state.socket) connect();
+  if (!state.socket) {
+    // Socket.IO 按需加载（从本机服务器 /vendor 路径）；云网页版与云房间模式完全不需要它
+    const ioOk = await ensureSocketIo();
+    if (!ioOk) return ui.showLobbyError('本机服务器组件加载失败：无法连接自托管服务器（云房间不需要本机服务器）');
+    connect();
+  }
   if (!state.socket.connected()) {
     const ok = await waitForConnect(6000);
     if (!ok) return ui.showLobbyError('无法连接服务器：请确认主机已在房间内、地址填写正确');
@@ -342,7 +379,7 @@ async function enterCloudRoom(username) {
     state.stats?.start();
     refreshBudgetInfo();
     renderStage();
-    const invite = location.origin + location.pathname + '?cloud=' + state.cloudCode;
+    const invite = cloudInviteUrl(state.cloudCode);
     if (kind === 'create') copyText(invite, `☁️ 云房间已创建 · 房间码 ${state.cloudCode}（邀请链接已复制）`);
     else toast(`已加入云房间 ${state.cloudCode}`);
   } catch (err) {
@@ -355,6 +392,15 @@ async function enterCloudRoom(username) {
 
 /** 刷新 ICE 配置（含 TURN 临时凭据）。TURN 尚未就绪时会自动稍后重试。 */
 async function refreshIceServers({ force = false } = {}) {
+  if (state.cloudHosted) {
+    // 云网页版：/api/ice 由云信令服务提供（当前阶段仅 STUN），直接用 /api/config 的 STUN
+    if (!state.iceServers?.length) {
+      state.iceServers = (state.stunServers || []).map((s) => ({ urls: /^stun:/i.test(s) ? s : `stun:${s}` }));
+      state.iceAt = Date.now();
+      state.mesh?.setIceServers(state.iceServers);
+    }
+    return;
+  }
   const fresh = state.iceAt && Date.now() - state.iceAt < 30 * 60 * 1000;
   if (!force && state.iceServers?.length && fresh && state.iceTurnReady !== false) return;
   try {
@@ -417,6 +463,21 @@ function setupTransport(socket) {
   });
 }
 
+/** 按需加载 Socket.IO 客户端（本机服务器提供 /vendor/socket.io/socket.io.js），失败返回 false */
+function ensureSocketIo() {
+  if (window.io) return Promise.resolve(true);
+  if (!window.__gsIoLoading) {
+    window.__gsIoLoading = new Promise((resolve) => {
+      const s = document.createElement('script');
+      s.src = '/vendor/socket.io/socket.io.js';
+      s.onload = () => resolve(!!window.io);
+      s.onerror = () => { window.__gsIoLoading = null; resolve(false); };
+      document.head.appendChild(s);
+    });
+  }
+  return window.__gsIoLoading;
+}
+
 function connect() {
   setupTransport(connectSignaling({
     onConnect: () => {
@@ -448,6 +509,22 @@ function getRelayUrl() {
   if (q) return q;
   if (state.settings.relay) return state.settings.relay;
   return 'wss://gracs.ginyva.site/ws';
+}
+
+/** 云房间邀请链接的网页版地址：?web= > /api/config cloud.web > 云信令同域（自建）> 官方云网页版 */
+function cloudWebBase() {
+  const q = urlParam('web');
+  if (q) return q.replace(/\/+$/, '') + '/';
+  if (state.cloudWeb) return state.cloudWeb.replace(/\/+$/, '') + '/';
+  try {
+    const host = new URL(getRelayUrl()).host;
+    if (host && !/^gracs\.ginyva\.site$/i.test(host)) return 'https://' + host + '/';
+  } catch { /* 相对地址：忽略 */ }
+  return 'https://gracs.ginyva.site/';
+}
+
+function cloudInviteUrl(code) {
+  return cloudWebBase() + '?cloud=' + encodeURIComponent(code);
 }
 
 function connectCloud() {
@@ -951,7 +1028,7 @@ async function inviteUrls() {
 async function openInviteModal() {
   openModal('#modal-invite');
   if (state.socket?.isCloud && state.cloudCode) {
-    const url = location.origin + location.pathname + '?cloud=' + state.cloudCode;
+    const url = cloudInviteUrl(state.cloudCode);
     renderInvite({ urls: [{ url, label: `☁️ 云房间邀请（房间码 ${state.cloudCode}）` }], primary: url });
     return;
   }
@@ -965,7 +1042,7 @@ async function openInviteModal() {
 async function openQrModal() {
   openModal('#modal-qr');
   if (state.socket?.isCloud && state.cloudCode) {
-    renderQrModal(location.origin + location.pathname + '?cloud=' + state.cloudCode);
+    renderQrModal(cloudInviteUrl(state.cloudCode));
     return;
   }
   const urls = await inviteUrls();

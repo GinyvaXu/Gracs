@@ -3,6 +3,20 @@ import { $, el, toast, copyText, sparkline, fmtBitrate } from './core.js';
 import { qrSvgUrl } from './api.js';
 import { linkRow } from './ui.js';
 import { describeLimit } from './stats.js';
+import qrcode from '../vendor/qrcode-generator.mjs';
+
+// 二维码在客户端直接生成（本地服务器 / 云网页版都可用）；异常时回退本机服务器接口
+function qrDataUri(text) {
+  try {
+    const qr = qrcode(0, 'M');
+    qr.addData(text);
+    qr.make();
+    const svg = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  } catch {
+    return qrSvgUrl(text);
+  }
+}
 
 // ── 邀请（地址列表 + 二维码）──
 export function renderInvite({ urls, primary }) {
@@ -14,12 +28,12 @@ export function renderInvite({ urls, primary }) {
     for (const item of urls) box.append(linkRow(item.label || item.kind, item.url));
   }
   const qr = $('#invite-qr');
-  qr.src = qrSvgUrl(primary || urls[0]?.url || location.origin);
+  qr.src = qrDataUri(primary || urls[0]?.url || location.origin);
   $('#invite-qr').alt = '扫码加入 ' + (primary || '');
 }
 
 export function renderQrModal(url) {
-  $('#room-qr').src = qrSvgUrl(url);
+  $('#room-qr').src = qrDataUri(url);
   $('#qr-room-url').textContent = url;
   $('#btn-qr-copy').onclick = async () => {
     const ok = await copyText(url);
