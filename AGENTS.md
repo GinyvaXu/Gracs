@@ -1,10 +1,12 @@
-# AGENTS.md — Gracs 项目规则与状态（v2.0.0）
+# AGENTS.md — Gracs 项目规则与状态（v2.2.0）
 
 ## 项目简介
 自托管的**屏幕共享**工具：房间 + 多人轮流共享 + 系统声音，一起看视频/电影/游戏画面。
 - 浏览器版：Node.js + Express + Socket.IO 信令服务器，媒体走 WebRTC P2P（标准链路）或 WebCodecs 服务器中继（影院模式）
 - 桌面版：Electron 壳（`desktop/main.js`）内嵌信令服务器，Windows 便携版/安装版 exe
 - **联机零外置软件**：内置 STUN/TURN 中继 + UPnP/NAT-PMP 端口映射 + IPv6/局域网直连（Radmin 等仅作高级备选）
+- **☁️ 云房间**（v2.2.0）：信令托管在 Cloudflare Workers + Durable Objects（独立仓库 `GinyvaXu/Project4`，
+  域名 `gracs.ginyva.site`），房间码进出、免组网；同站还托管「云网页版」客户端（邀请链接/扫码即用）
 
 ## 目录结构
 ```
@@ -13,8 +15,8 @@ server/           信令服务器
   net/            网络能力层：interfaces(地址枚举) / gateway(UPnP/NAT-PMP) / publicip(STUN/NAT类型)
                   / turn(内置中继) / tls(自签证书) / doctor(网络诊断)
 client/           Web 客户端（原生 ES Modules，无构建步骤）
-  index.html + css/style.css + js/*（main/core/api/signaling/capabilities/screenshare/
-  webrtc/cinema/stats/stage/ui/panels）+ sw.js + manifest.webmanifest + assets/(PWA 图标)
+  index.html + css/style.css + js/*（main/core/api/signaling/cloud-signal/capabilities/screenshare/
+  webrtc/cinema/stats/stage/ui/panels）+ vendor/(qrcode-generator) + sw.js + manifest.webmanifest + assets/(PWA 图标)
 desktop/          Electron 桌面壳（main.js / preload.cjs / updater.js / helpers/gv-helper.cs）
 assets/           应用图标（icon.png / icon.ico / tray.png，scripts/gen-icon.mjs 生成）
 scripts/          构建/测试/导出/归档脚本（build-debug.mjs、smoke-test.mjs、gen-icon.mjs…）
@@ -37,6 +39,17 @@ npm run dist:installer  # 构建安装版 exe
 npm run finalize        # 复制 build\ 下的 exe 到 installer\
 npm run archive         # 发布归档：产物/源码快照到 versions/vX.Y.Z/
 ```
+
+## 云信令 / 云网页版（独立仓库 Project4）
+```bash
+# 目录：<Project7>\Project4（GitHub GinyvaXu/Project4；部署到 gracs.ginyva.site）
+node scripts/sync-client.mjs "<本仓库>/client"   # 同步云网页版客户端到 Project4/public（部署前必跑）
+npx wrangler deploy                              # 部署 Worker+静态资源（首次需 npx wrangler login）
+RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测试（13 项）
+```
+- 客户端 `cloud-signal.js` 与 `signaling.js` 同接口；云房间暂不支持影院模式（码流中继依赖本机服务器）
+- 云邀请链接 = `https://gracs.ginyva.site/?cloud=房间码`（可用 `?web=` 覆盖；桌面版 localhost 邀请必须走公网网页版）
+- 云网页版检测：`/api/config` 返回 `cloud` 字段时，客户端进入页只保留「云房间」并隐藏本机网络诊断
 
 ## 版本与发布（遵循 project-git-mgmt）
 - 分支模型：`main` 只接受来自 `develop` 的合并（--no-ff）；日常开发在 `develop`，不额外建 feature 分支
@@ -61,7 +74,10 @@ npm run archive         # 发布归档：产物/源码快照到 versions/vX.Y.Z/
 - **Service Worker 必须网络优先**：否则「改了代码刷新还是旧版」（历史踩坑）。`/js`、`/css`、`/assets` 都走网络优先 + 缓存兜底。
 - **无语音/无聊天**：客户端只有屏幕画面 + 可选系统声音。**不要加回麦克风/文字聊天**（用户明确要求专注共享；
   v1.4.0 的内置语音因无法正常使用已于 v2.0.0 移除）。
-- **停止共享以服务器状态为准**（不要依赖 track mute，窗口最小化也会触发）；桌面版停止时恢复被静音的其它应用。
+- **停止共享以服务器状态为准**（不要依赖 track mute，窗口最小化也会触发）；桌面版停止时恢复被静音的其它应用
+- **云房间（v2.2.0）**：信令走 Cloudflare DO（`gracs.ginyva.site`），媒体仍 P2P；`client/js/cloud-signal.js` 与 `signaling.js` 同接口；
+  云房间下影院模式自动回退标准链路；云网页版由 Project4 同站托管（邀请链接无需主机可被连接）
+- **二维码在客户端生成**（`client/vendor/qrcode-generator.mjs`）：`/api/qr.svg` 仅作回退，不再是必需接口。
 
 ## 注意事项
 - 项目路径含 `&`：npm scripts 一律用 `node node_modules/electron-builder/cli.js` 直调 CLI，不要用 `.bin` 的 .cmd 垫片（cmd 会把路径按 `&` 截断）
@@ -81,13 +97,19 @@ npm run archive         # 发布归档：产物/源码快照到 versions/vX.Y.Z/
 - 构建产物一律英文命名（Gracs-Debug/Portable/Setup-vX.Y.Z.exe）；目录不含中文
 
 ## 当前状态
-- 版本：v2.1.0（**更名 Gracs / GRACS / 格瑞克斯**，原名 GinyScreen；功能与协议不变，产物名与 appId 变更，迁移说明见 CHANGELOG）
+- 版本：v2.2.0（**☁️ 云房间** + 品牌 Gracs）
+  - v2.2.0：云房间连接模式（Project4 云信令：Cloudflare Workers + Durable Objects，`gracs.ginyva.site`，
+    房间码进出、免组网）+ **云网页版同站托管**（`https://gracs.ginyva.site/?cloud=房间码`，邀请/扫码即用，手机可直接加入）；
+    云房间暂不支持影院模式（自动回退标准链路）；二维码改客户端本地生成；Socket.IO 按需加载
+  - v2.1.1：全屏三级兜底 + 手机端适配 + IPv6 中继双栈与诊断
+  - v2.1.0：**更名 Gracs / GRACS / 格瑞克斯**（原名 GinyScreen；产物名与 appId 变更，迁移说明见 CHANGELOG）
   - v2.0.1：修复全屏/画中画/音量按钮失效；系统声音采集改稳 + 质量面板显示声音状态
   - v2.0.0（完全重建）：零外置软件联机（内置 STUN/TURN + UPnP/NAT-PMP + IPv6/局域网直连 + 网络诊断）；
     双链路共享（标准 WebRTC 优化 / 影院模式 WebCodecs 中继）；质量面板；响应式 UI + PWA + 二维码邀请；移除内置麦克风语音。
 - 品牌：Gracs = Ginyva Remote Access Cross-network Screen-sharing Solution；缩写 GRACS；读音 /ɡræks/；中文「格瑞克斯」
 - 分支：main（稳定，v1.5.1）/ develop（v2.x 开发）
 - 远程：https://github.com/GinyvaXu/Gracs（公开；更名前为 GinyvaXu/GinyScreen，updater 同时保留旧仓库兜底源）
+- 云信令：https://github.com/GinyvaXu/Project4（Cloudflare Workers，部署 `gracs.ginyva.site`；本地副本在 `<Project7>\Project4`）
 - 自动更新：桌面安装版内置 updater.js（多源清单 + NSIS 静默升级），清单为根目录 update.json
 - 待办与路线图见 source/requirements.md 与 docs/gap-analysis.md
 - 高级备选联机方案（Radmin VPN / 蒲公英 / SakuraFrp）教程见 docs/fri-network.md

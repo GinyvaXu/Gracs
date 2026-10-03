@@ -7,7 +7,7 @@
 **Gracs（GRACS · 格瑞克斯）** = *Ginyva Remote Access Cross-network Screen-sharing Solution*
 （Ginyva 远程接入 · 跨网络 · 屏幕共享方案），读音 /ɡræks/。
 
-![形态](https://img.shields.io/badge/形态-Web%20%2B%20Electron-blue) ![平台](https://img.shields.io/badge/平台-Windows%20%2F%20macOS%20%2F%20Linux%20%2F%20手机-lightgrey) ![版本](https://img.shields.io/badge/版本-v2.1.0-green) ![技术](https://img.shields.io/badge/技术-WebRTC%20%2B%20WebCodecs%20%2B%20Node.js-orange)
+![形态](https://img.shields.io/badge/形态-Web%20%2B%20Electron-blue) ![平台](https://img.shields.io/badge/平台-Windows%20%2F%20macOS%20%2F%20Linux%20%2F%20手机-lightgrey) ![版本](https://img.shields.io/badge/版本-v2.2.0-green) ![技术](https://img.shields.io/badge/技术-WebRTC%20%2B%20WebCodecs%20%2B%20Node.js-orange)
 
 ---
 
@@ -15,6 +15,7 @@
 
 | 主题 | 能力 |
 |------|------|
+| ☁️ **云房间（免组网）** | 不想暴露主机地址？用「云房间」：**6 位房间码**进出，信令走 Cloudflare，**开房者完全不需要"可被连接"**；邀请链接/二维码指向公网网页版，手机扫码直接加入 |
 | 🌐 **零外置联机软件** | 内置 **STUN/TURN 中继** + **UPnP/NAT-PMP 自动端口映射** + **IPv6 / 局域网自动直连**；开房即得可分享地址，**不再需要 Radmin / ZeroTier / 蒲公英 / 内网穿透** |
 | 🎞️ **双链路共享** | **标准链路**（WebRTC，低延迟，适合游戏/互动）与 **影院模式**（WebCodecs + 服务器中继，画质恒定不抖动，适合看电影），一键切换 |
 | 📶 **画质可控可观测** | 编解码智能优选（AV1→VP9→H.264→VP8）、**每位观看者独立码率自适应**、实时质量面板（码率/帧率/RTT/丢包/直连还是中继/声音状态/拥塞原因） |
@@ -50,6 +51,16 @@ npm start
 打开 `http://localhost:3000` 进入房间，把「邀请」里的地址发给好友。
 
 > **好友需要什么？** 只需要一个浏览器（Edge / Chrome / Safari）。不需要安装任何软件，也不需要联机工具。
+
+### 方式三：☁️ 云房间（免组网，零配置）
+
+1. 打开页面 → 选择 **「☁️ 云房间」** → 房间码留空 → 点 **创建云房间**（邀请链接自动复制，同时给出二维码）
+2. 把链接（形如 `https://gracs.ginyva.site/?cloud=K7X2Q9`）发给好友，或让好友直接扫码
+3. 好友用浏览器打开即进 —— **手机也可以**，无需安装、无需组网、无需主机可被连接
+
+- 信令由 Cloudflare 托管（`gracs.ginyva.site`），**画面/声音仍是 WebRTC P2P 直连**、端到端加密
+- 云房间目前使用**标准链路**；影院模式需要主机开服（云房间下会自动回退并提示）
+- 云网页版就是 Gracs 客户端本身；自己开服务器 / 局域网直连的玩法完全保留
 
 ---
 
