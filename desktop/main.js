@@ -61,6 +61,8 @@ let appUrl = '';
 let quitting = false;
 let serverPort = 3000;
 let pendingDisplayCapture = null; // { callback, audioRequested, sources }
+let lastDisplayPick = null;       // { sourceId, at } 最近一次用户在应用内选择器里选中的来源
+let audioFallbackUntil = 0;       // 系统声音启动失败后的自动重试窗口（主进程收到 gv:audio-fallback 时设置）
 let activeWindowAudioSnapshot = null; // 窗口声音方案A：被静音应用的快照路径
 let remoteRecoveryShown = false;
 let localUrlForRecovery = '';
@@ -252,6 +254,20 @@ async function bootstrap() {
 function wireDisplayCapture() {
   session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
     try {
+      // 系统声音启动失败（声卡驱动不兼容回环）后的自动降级：沿用上次选择的来源、仅画面、不再弹选择器
+      const canFallback = !request.audioRequested && lastDisplayPick
+        && Date.now() < audioFallbackUntil && Date.now() - lastDisplayPick.at < 60_000;
+      audioFallbackUntil = 0;
+      if (canFallback) {
+        const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
+        const source = sources.find((src) => src.id === lastDisplayPick.sourceId);
+        if (source) {
+          await restoreMutedApps();   // 不采集声音 → 恢复此前为「窗口声音」静音的其它应用
+          logger.work(`系统声音启动失败 → 自动沿用上次来源（仅画面）：${source.name}`);
+          callback({ video: source });
+          return;
+        }
+      }
       const sources = await desktopCapturer.getSources({
         types: ['screen', 'window'],
         thumbnailSize: { width: 320, height: 180 },
@@ -264,7 +280,7 @@ function wireDisplayCapture() {
         thumbnail: src.thumbnail && !src.thumbnail.isEmpty() ? src.thumbnail.toDataURL() : '',
       }));
       pendingDisplayCapture = { callback, audioRequested: request.audioRequested, sources };
-    logger.work(`屏幕采集请求：来源候选 ${sources.length} 个 · 页面请求音频=${request.audioRequested ? '是' : '否'}`);
+      logger.work(`屏幕采集请求：来源候选 ${sources.length} 个 · 页面请求音频=${request.audioRequested ? '是' : '否'}`);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('gv:display-source-list', list);
       } else {
@@ -282,6 +298,7 @@ function wireDisplayCapture() {
     if (!pending) return;
     const source = pending.sources.find((src) => src.id === sourceId);
     if (!source) { pending.callback(null); return; }
+    lastDisplayPick = { sourceId: source.id, at: Date.now() };
     // 窗口声音方案A：共享「窗口」并勾选系统声音时，静音其它应用（含本机语音回放），
     // 让回环采集只包含该窗口的声音，也避免他人声音/杂音被当作共享音频传回。
     if (pending.audioRequested && String(source.id).startsWith('window:')) {
@@ -304,25 +321,36 @@ function wireDisplayCapture() {
     logger.work(`屏幕采集选择：${source.name}（${source.type}）· 系统声音=${pending.audioRequested ? 'loopback 回环采集（保留本机回放）' : '关闭（页面未请求音频）'}`);
   });
 
-  // 停止共享时恢复被静音的其他应用
-  ipcMain.on('gv:restore-window-audio', async () => {
-    if (!activeWindowAudioSnapshot) return;
-    const snap = activeWindowAudioSnapshot;
-    activeWindowAudioSnapshot = null;
-    try {
-      const r = await runHelper(['audio', 'restore', snap]);
-      logger.work('恢复音频会话 → ' + (r.ok ? r.out : (r.err || '失败')));
-    } catch (err) {
-      logger.error('恢复音频失败:', err);
-    }
-    try { rmSync(snap, { force: true }); } catch { /* 忽略 */ }
+  // 系统声音启动失败（页面收到 NotReadableError）→ 打开自动降级窗口：
+  // 下一次采集直接沿用上次来源、仅画面、不弹选择器
+  ipcMain.handle('gv:audio-fallback', () => {
+    audioFallbackUntil = Date.now() + 30_000;
+    logger.work('系统声音启动失败：下次采集将自动沿用上次来源（仅画面，不再弹选择器）');
+    return { ok: true };
   });
+
+  // 停止共享 / 降级时恢复被静音的其他应用
+  ipcMain.on('gv:restore-window-audio', () => { restoreMutedApps(); });
 
   ipcMain.on('gv:cancel-display-source', () => {
     const pending = pendingDisplayCapture;
     pendingDisplayCapture = null;
     pending?.callback(null);
   });
+}
+
+/** 恢复「窗口声音」方案中为隔离声音而静音的其它应用（幂等：无快照时直接返回） */
+async function restoreMutedApps() {
+  if (!activeWindowAudioSnapshot) return;
+  const snap = activeWindowAudioSnapshot;
+  activeWindowAudioSnapshot = null;
+  try {
+    const r = await runHelper(['audio', 'restore', snap]);
+    logger.work('恢复音频会话 → ' + (r.ok ? r.out : (r.err || '失败')));
+  } catch (err) {
+    logger.error('恢复音频失败:', err);
+  }
+  try { rmSync(snap, { force: true }); } catch { /* 忽略 */ }
 }
 
 function resolveLogDir(isPackaged) {

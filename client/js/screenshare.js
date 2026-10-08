@@ -18,7 +18,13 @@ export function getPreset(key) {
   return PRESETS[key] || PRESETS[DEFAULT_PRESET];
 }
 
-/** 采集屏幕（可选系统声音）；Electron 桌面版会走内置源选择器 */
+/** 判断是否为「系统声音无法启动」错误（部分 Windows 声卡/驱动的 WASAPI 回环不兼容：NotReadableError: Could not start audio source） */
+function isAudioStartError(err) {
+  return /audio/i.test(String(err?.message || err || ''));
+}
+
+/** 采集屏幕（可选系统声音）；Electron 桌面版会走内置源选择器。
+ *  系统声音启动失败（声卡驱动不兼容回环）时自动降级为「仅画面」，不再让整个共享失败。 */
 export async function startScreenShare({ presetKey = DEFAULT_PRESET, withAudio = false, sourceId = null } = {}) {
   const preset = getPreset(presetKey);
   const video = {
@@ -38,7 +44,18 @@ export async function startScreenShare({ presetKey = DEFAULT_PRESET, withAudio =
   const constraints = { video, audio: !!withAudio };
   if (sourceId && window.gvDesktop) constraints.video = { ...video, mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId } };
 
-  const stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+  let stream;
+  let audioFallback = false;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+  } catch (err) {
+    if (!withAudio || !isAudioStartError(err)) throw err;
+    // 降级：桌面版先通知主进程按「上次来源」自动重试（不会再弹一次选择器）；浏览器版会重新弹出选择器
+    console.warn('系统声音采集失败，自动降级为仅画面：', err);
+    audioFallback = true;
+    try { await window.gvDesktop?.notifyAudioFallback?.(); } catch { /* 忽略 */ }
+    stream = await navigator.mediaDevices.getDisplayMedia({ ...constraints, audio: false });
+  }
 
   const videoTrack = stream.getVideoTracks()[0];
   const settings = videoTrack?.getSettings?.() || {};
@@ -62,7 +79,10 @@ export async function startScreenShare({ presetKey = DEFAULT_PRESET, withAudio =
       title: videoTrack?.label || '屏幕',
       hasAudio: audioTracks.length > 0,
       displaySurface: settings.displaySurface || '',
-      audioNote: withAudio && !audioTracks.length ? describeMissingAudio(settings) : '',
+      audioFallback,
+      audioNote: audioFallback
+        ? '系统声音采集失败（设备声卡驱动与系统音频回环不兼容）：已自动改为「仅画面」共享；更新声卡驱动后可重试'
+        : (withAudio && !audioTracks.length ? describeMissingAudio(settings) : ''),
     },
   };
 }

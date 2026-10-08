@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('gvDesktop', {
   onDisplaySourceList: (cb) => ipcRenderer.on('gv:display-source-list', (_e, list) => cb(list)),
   pickDisplaySource: (sourceId) => ipcRenderer.send('gv:pick-display-source', sourceId),
   cancelDisplaySource: () => ipcRenderer.send('gv:cancel-display-source'),
+  // 系统声音启动失败（声卡驱动不兼容回环）→ 通知主进程按上次来源自动重试（无音频、不弹二次选择器）
+  notifyAudioFallback: () => ipcRenderer.invoke('gv:audio-fallback'),
   // 窗口声音方案A：停止共享时恢复被静音的其他应用
   restoreWindowAudio: () => ipcRenderer.send('gv:restore-window-audio'),
   // Radmin VPN 联机
