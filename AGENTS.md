@@ -75,6 +75,8 @@ RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测�
 - **无语音/无聊天**：客户端只有屏幕画面 + 可选系统声音。**不要加回麦克风/文字聊天**（用户明确要求专注共享；
   v1.4.0 的内置语音因无法正常使用已于 v2.0.0 移除）。
 - **停止共享以服务器状态为准**（不要依赖 track mute，窗口最小化也会触发）；桌面版停止时恢复被静音的其它应用
+- **系统声音降级（v2.2.0）**：`screenshare.js` 遇 `NotReadableError: Could not start audio source`（声卡驱动不兼容 WASAPI 回环，设备级问题）时自动改「仅画面」重试；
+  桌面版主进程 `gv:audio-fallback` 会沿用上次来源（不弹二次选择器）并恢复为「窗口声音」静音的其它应用
 - **云房间（v2.2.0）**：信令走 Cloudflare DO（`gracs.ginyva.site`），媒体仍 P2P；`client/js/cloud-signal.js` 与 `signaling.js` 同接口；
   云房间下影院模式自动回退标准链路；云网页版由 Project4 同站托管（邀请链接无需主机可被连接）
 - **二维码在客户端生成**（`client/vendor/qrcode-generator.mjs`）：`/api/qr.svg` 仅作回退，不再是必需接口。
