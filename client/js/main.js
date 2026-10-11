@@ -65,7 +65,7 @@ async function boot() {
 
   try {
     const cfg = await fetchConfig();
-    state.version = cfg.version || '—';
+    state.version = cfg.appVersion || cfg.version || '—';   // 云网页版：优先显示客户端版本（appVersion）
     state.features = cfg.features || {};
     state.maxUsers = cfg.maxUsers || 12;
     state.stunServers = cfg.stunServers || [];
