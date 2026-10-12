@@ -158,10 +158,25 @@ export async function startScreenShare({ presetKey = DEFAULT_PRESET, withAudio =
       audioFallback,
       audioSourceLabel,
       audioNote: audioNote || (audioFallback
-        ? '系统声音采集失败（设备声卡驱动与系统音频回环不兼容）：已自动改为「仅画面」共享；更新声卡驱动后可重试'
+        ? fallbackAudioNote(settings, !!window.gvDesktop)
         : (withAudio && !audioTracks.length ? describeMissingAudio(settings) : '')),
     },
   };
+}
+
+/** 声音采集失败后的提示：按「共享来源 / 是否桌面版」区分原因与建议 */
+function fallbackAudioNote(settings, isDesktop) {
+  if (isDesktop) {
+    return '系统声音采集失败（原生回环与兼容采集均未成功）：已改为「仅画面」共享；可尝试更新声卡驱动或重启 Gracs';
+  }
+  const surface = settings?.displaySurface;
+  if (surface === 'window') {
+    return '浏览器共享「窗口」无法采集声音（Chrome/Edge 限制）：请改选「整个屏幕」并勾选「共享系统音频」；桌面版支持按应用单独采声（语音软件不受影响）';
+  }
+  if (surface === 'browser') {
+    return '共享「标签页」未拿到声音：请在弹窗里勾选「同时共享标签页音频」；桌面版可按应用单独采声';
+  }
+  return '本机浏览器回环采集不可用（常见于蓝牙耳机/声卡驱动）：已改为「仅画面」共享；下载桌面版可自动修复（内置兼容采集 + 按应用采声），或改选「标签页」共享其声音';
 }
 
 /** 未拿到系统声音时，按「共享来源类型」给出可操作的提示 */
