@@ -1,0 +1,27 @@
+node_modules/
+ä¸­é—´äº§ç‰©/
+æˆå“/
+build/
+release/
+temp/
+build/debug/
+dist/
+logs/
+versions/*/dist/
+versions/*/installer/
+versions/*/*.exe
+*.log
+.DS_Store
+Thumbs.db
+.env
+.vscode/
+.idea/
+installer/*.exe
+
+versions/backups/
+
+# æœ¬åœ°æ„å»ºä¾èµ–ï¼ˆRadmin å®‰è£…åŒ… / gv-helper.exe / NAudio DLLï¼Œä¸å…¥åº“ï¼‰
+resources/
+
+# Playwright ½ØÍ¼/×·×ÙÁÙÊ±Ä¿Â¼£¨±¾µØµ÷ÊÔÓÃ£©
+.playwright-mcp/
