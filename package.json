@@ -1,6 +1,6 @@
 {
   "name": "gracs",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Gracs - 一起看屏幕：零外置软件联机的屏幕共享（WebRTC + WebCodecs 影院模式 + 内置中继 + UPnP/IPv6）",
   "main": "desktop/main.js",
   "type": "module",
