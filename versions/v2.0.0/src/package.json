@@ -1,0 +1,90 @@
+{
+  "name": "ginyscreen",
+  "version": "2.0.0",
+  "description": "GinyScreen - 一起看屏幕：零外置软件联机的屏幕共享（WebRTC + WebCodecs 影院模式 + 内置中继 + UPnP/IPv6）",
+  "main": "desktop/main.js",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "electron": "node node_modules/electron/cli.js desktop/main.js",
+    "icon": "node scripts/gen-icon.mjs",
+    "dist": "node scripts/sync-version.mjs && node scripts/electron-builder.mjs --win",
+    "dist:debug": "node scripts/sync-version.mjs && node scripts/build-debug.mjs",
+    "dist:portable": "node scripts/sync-version.mjs && node scripts/electron-builder.mjs --win portable",
+    "dist:installer": "node scripts/sync-version.mjs && node scripts/electron-builder.mjs --win nsis",
+    "helper": "node scripts/build-helper.mjs",
+    "finalize": "node scripts/export-electron.mjs",
+    "archive": "node scripts/archive-release.mjs",
+    "certs": "node scripts/make-certs.js",
+    "test": "node scripts/smoke-test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@achingbrain/nat-port-mapper": "^4.0.5",
+    "express": "^4.19.2",
+    "qrcode-generator": "^2.0.4",
+    "selfsigned": "^5.5.0",
+    "socket.io": "^4.7.5",
+    "turn-server": "^0.6.6"
+  },
+  "devDependencies": {
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
+    "socket.io-client": "^4.8.3"
+  },
+  "build": {
+    "appId": "com.ginyscreen.app",
+    "productName": "GinyScreen",
+    "copyright": "Copyright (c) 2026 GinyScreen",
+    "asar": true,
+    "directories": {
+      "output": "build",
+      "buildResources": "assets"
+    },
+    "files": [
+      "server/**/*",
+      "client/**/*",
+      "desktop/**/*",
+      "assets/**/*",
+      "VERSION"
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "portable": {
+      "artifactName": "GinyScreen-Portable-v${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "GinyScreen-Setup-v${version}.exe"
+    },
+    "extraResources": [
+      {
+        "from": "resources/gv-helper.exe",
+        "to": "gv-helper.exe"
+      },
+      {
+        "from": "resources/NAudio.Core.dll",
+        "to": "NAudio.Core.dll"
+      },
+      {
+        "from": "resources/NAudio.Wasapi.dll",
+        "to": "NAudio.Wasapi.dll"
+      },
+      {
+        "from": "resources/Radmin_VPN_2.0.4899.9.exe",
+        "to": "Radmin_VPN_2.0.4899.9.exe"
+      }
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "url": "https://github.com/GinyvaXu/GinyScreen/releases/download/v1.4.1/GinyScreen-Setup-v1.4.1.exe",
+  "notes": "# v1.4.1\n\n- 修复：首页「Radmin 联机」/ 房间内「联机」按钮无响应（事件绑定选择器漏写 # 前缀，根因修复）\n- 自动更新：v1.4.0 用户可通过更新链路升级到 v1.4.1",
+  "version": "1.4.1"
+}

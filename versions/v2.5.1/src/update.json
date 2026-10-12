@@ -1,0 +1,5 @@
+{
+  "url": "https://github.com/GinyvaXu/Gracs/releases/download/v2.1.0/Gracs-Setup-v2.1.0.exe",
+  "notes": "# v2.1.0 · 更名 Gracs（GRACS · 格瑞克斯）\n\n- 软件更名为 **Gracs / GRACS / 格瑞克斯**：Ginyva Remote Access Cross-network Screen-sharing Solution\n- 界面、关于面板（含全称/缩写/读音）、托盘、启动横幅、文档全部更新\n- 安装包与产物更名为 `Gracs-Debug/Portable/Setup-vX.Y.Z.exe`\n- 更新链路同时兼容新仓库与旧仓库（GinyvaXu/GinyScreen）\n\n## 升级提示\n- 安装版升级后可能出现新旧两份程序（Gracs 与 GinyScreen 并存），请确认新版可用后卸载旧版\n- 桌面版首次启动需重新填写一次连接设置（应用配置目录随名称变化）\n\n## 上一版（v2.0.1）修复\n- 全屏 / 画中画 / 音量滑块恢复正常\n- 系统声音采集更稳，并在质量面板显示声音状态与音频码率\n",
+  "version": "2.1.0"
+}

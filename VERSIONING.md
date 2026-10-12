@@ -1,4 +1,4 @@
-# 版本管理规范 — GinyScreen
+# 版本管理规范 — Gracs
 
 > 本项目遵循 `project-git-mgmt` 通用 Git 版本管理规范。
 
@@ -60,7 +60,7 @@ develop ───●────●───●────●───●──
 
 | 版本 | 说明 |
 |------|------|
-| v0.4.0 | 更名 GinyScreen；新增 Debug 版 exe 构建（dist:debug）与自动更新（update.json + updater.js）；顶部菜单/弹窗修复；产物全英文命名 |
+| v0.4.0 | 更名 Gracs；新增 Debug 版 exe 构建（dist:debug）与自动更新（update.json + updater.js）；顶部菜单/弹窗修复；产物全英文命名 |
 | v0.3.0 | 顶部菜单栏统筹全部功能；完整设置/快捷键/关于面板 |
 | v0.2.0 | 新增 Electron 桌面版：内嵌信令服务器、系统托盘、最小化到托盘、日志落盘；新增便携版 / 安装版 exe 构建；新增 assets 图标与 build/installer/versions 目录规范 |
 | v0.1.0 | 首个可用版本：WebRTC mesh 语音 + 屏幕共享 + 文字聊天；Debug 版日志系统与自包含导出包 |

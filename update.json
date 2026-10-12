@@ -1,5 +1,5 @@
 {
-  "url": "https://github.com/GinyvaXu/GinyScreen/releases/download/v1.5.1/GinyScreen-Setup-v1.5.1.exe",
-  "notes": "# v1.5.1\n\n## 修复\n- **Radmin 联机「创建/加入网络」报「Radmin VPN 未运行」**：已装但未运行时不自动启动；已修复为自动启动 Radmin VPN，并清理 Qt 插件路径环境变量污染（PyInstaller 残留 QT_PLUGIN_PATH 会导致 Qt 平台插件初始化失败）\n- **新版 Radmin VPN 2.x 界面无法自动点击**：2.x 为 Qt 托盘程序（UIA 控件树为空），改为自动启动后给出明确指引（托盘右键 → 网络 → 创建/加入网络），完成后「刷新状态」获取虚拟 IP\n\n> v1.5.0 之前的用户可通过自动更新升级，或到 Releases 下载安装版。",
-  "version": "1.5.1"
+  "url": "https://github.com/GinyvaXu/Gracs/releases/download/v2.1.0/Gracs-Setup-v2.1.0.exe",
+  "notes": "# v2.1.0 · 更名 Gracs（GRACS · 格瑞克斯）\n\n- 软件更名为 **Gracs / GRACS / 格瑞克斯**：Ginyva Remote Access Cross-network Screen-sharing Solution\n- 界面、关于面板（含全称/缩写/读音）、托盘、启动横幅、文档全部更新\n- 安装包与产物更名为 `Gracs-Debug/Portable/Setup-vX.Y.Z.exe`\n- 更新链路同时兼容新仓库与旧仓库（GinyvaXu/GinyScreen）\n\n## 升级提示\n- 安装版升级后可能出现新旧两份程序（Gracs 与 GinyScreen 并存），请确认新版可用后卸载旧版\n- 桌面版首次启动需重新填写一次连接设置（应用配置目录随名称变化）\n\n## 上一版（v2.0.1）修复\n- 全屏 / 画中画 / 音量滑块恢复正常\n- 系统声音采集更稳，并在质量面板显示声音状态与音频码率\n",
+  "version": "2.1.0"
 }

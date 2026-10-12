@@ -22,3 +22,6 @@ versions/backups/
 
 # æœ¬åœ°æ„å»ºä¾èµ–ï¼ˆRadmin å®‰è£…åŒ… / gv-helper.exe / NAudio DLLï¼Œä¸å…¥åº“ï¼‰
 resources/
+
+# Playwright ½ØÍ¼/×·×ÙÁÙÊ±Ä¿Â¼£¨±¾µØµ÷ÊÔÓÃ£©
+.playwright-mcp/

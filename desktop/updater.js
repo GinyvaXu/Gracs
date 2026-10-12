@@ -8,8 +8,12 @@ import { createWriteStream, writeFileSync, mkdirSync, readFileSync, rmSync, exis
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 
-const REPO = 'GinyvaXu/GinyScreen';
+const REPO = 'GinyvaXu/Gracs';
+// 仓库更名（GinyScreen → Gracs）后的兜底源：老仓库在 GitHub 上重命名后仍可作备用，
+// 极端情况下（重命名后 raw 404）也能靠新仓库/镜像拿到清单。
+const LEGACY_REPO = 'GinyvaXu/GinyScreen';
 const RAW_MANIFEST = `https://raw.githubusercontent.com/${REPO}/main/update.json`;
+const LEGACY_MANIFEST = `https://raw.githubusercontent.com/${LEGACY_REPO}/main/update.json`;
 const MANIFEST_SOURCES = [
   ['ghfast', 'https://ghfast.top/' + RAW_MANIFEST],
   ['raw', RAW_MANIFEST],
@@ -17,10 +21,13 @@ const MANIFEST_SOURCES = [
   ['gh-llkk', 'https://gh.llkk.cc/' + RAW_MANIFEST],
   ['gh-proxy-com', 'https://gh-proxy.com/' + RAW_MANIFEST],
   ['jsdelivr', `https://cdn.jsdelivr.net/gh/${REPO}@main/update.json`],
+  ['legacy-raw', LEGACY_MANIFEST],
+  ['legacy-ghfast', 'https://ghfast.top/' + LEGACY_MANIFEST],
+  ['legacy-jsdelivr', `https://cdn.jsdelivr.net/gh/${LEGACY_REPO}@main/update.json`],
   ['api', `https://api.github.com/repos/${REPO}/releases/latest`],
 ];
 export const RELEASE_PAGE = `https://github.com/${REPO}/releases`;
-const _UA = 'GinyScreen-Updater/1.0';
+const _UA = 'Gracs-Updater/1.0';
 const CHECK_TIMEOUT = 12_000;
 const DOWNLOAD_TIMEOUT = 180_000;
 const MIRROR_PREFIXES = [
@@ -29,6 +36,26 @@ const MIRROR_PREFIXES = [
   'https://gh.llkk.cc/',
   'https://gh-proxy.com/',
 ];
+// 安装包下载地址白名单：update.json 被篡改时，避免下载任意来源的可执行文件
+const TRUSTED_DOWNLOAD_HOSTS = new Set([
+  'github.com',
+  'objects.githubusercontent.com',
+  'github-releases.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'dl.ginyva.site',
+  'ghfast.top',
+  'ghproxy.net',
+  'gh.llkk.cc',
+  'gh-proxy.com',
+]);
+function isTrustedDownloadUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && TRUSTED_DOWNLOAD_HOSTS.has(u.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
 const markerFile = () => join(app.getPath('userData'), 'update-marker.json');
 
 // ---------- 版本比较 ----------
@@ -132,6 +159,9 @@ async function downloadOne(url, destPath, onProgress, timeout = DOWNLOAD_TIMEOUT
 
 // 多源下载：官方 URL 优先，失败依次换国内代理镜像，每个源最多 2 次
 export async function downloadInstaller(url, destPath, onProgress) {
+  if (!isTrustedDownloadUrl(url)) {
+    throw new Error('更新下载地址不受信任，已阻止：' + String(url || '').slice(0, 120));
+  }
   const sources = [url, ...MIRROR_PREFIXES.map((m) => m + url)];
   let lastErr = null;
   for (let i = 0; i < sources.length; i++) {
@@ -180,7 +210,7 @@ export function verifyUpdateMarker(currentVersion, logger) {
 // 成功后重启应用并自清理。NSIS 安装器支持 /S 静默安装，AppId 固定保证覆盖升级。
 function launchUpdateBatch(installerPath, exePath, logPath) {
   const batDir = app.getPath('temp');
-  const batPath = join(batDir, `GinyScreen-update-${Date.now()}.bat`);
+  const batPath = join(batDir, `Gracs-update-${Date.now()}.bat`);
   const name = exePath.split(/[\\/]/).pop().replace(/\.exe$/i, '');
   const lines = [
     '@echo off',
@@ -210,7 +240,7 @@ function launchUpdateBatch(installerPath, exePath, logPath) {
     '  set /a n+=1',
     '  if !n! lss 3 ( powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 3" & goto install )',
     '  echo [%date% %time%] install failed, open releases >> "%LOG%"',
-    '  start "" "https://github.com/GinyvaXu/GinyScreen/releases"',
+    '  start "" "https://github.com/GinyvaXu/Gracs/releases"',
     '  goto end',
     ')',
     'echo [%date% %time%] relaunch >> "%LOG%"',
@@ -242,7 +272,7 @@ export async function applyUpdate({ currentVersion, logger, onProgress }) {
     shell.openExternal(RELEASE_PAGE);
     return { ok: false, message: '便携版不支持自动更新，已打开下载页，请手动下载新版' };
   }
-  const destPath = join(app.getPath('temp'), `GinyScreen-Setup-${check.latest}.exe`);
+  const destPath = join(app.getPath('temp'), `Gracs-Setup-${check.latest}.exe`);
   try {
     onProgress?.('正在下载新版本…');
     await downloadInstaller(check.url, destPath, (pct) => onProgress?.(pct));
@@ -259,7 +289,7 @@ export async function applyUpdate({ currentVersion, logger, onProgress }) {
 
   const choice = dialog.showMessageBoxSync({
     type: 'question',
-    title: 'GinyScreen 更新',
+    title: 'Gracs 更新',
     message: `新版本 v${check.latest} 已下载`,
     detail: `${check.notes?.slice(0, 400) || '点击确定安装并重启。'}\n\n安装过程中程序会自动关闭，完成后自动打开新版本。`,
     buttons: ['立即更新', '稍后'],
@@ -268,7 +298,7 @@ export async function applyUpdate({ currentVersion, logger, onProgress }) {
   });
   if (choice !== 0) return { ok: true, message: '已取消，下次启动可再次更新' };
 
-  const logPath = join(app.getPath('temp'), 'GinyScreen-update.log');
+  const logPath = join(app.getPath('temp'), 'Gracs-update.log');
   mkdirSync(app.getPath('temp'), { recursive: true });
   launchUpdateBatch(destPath, process.execPath, logPath);
   logger?.work?.(`更新批处理已启动，程序即将退出自动安装`);

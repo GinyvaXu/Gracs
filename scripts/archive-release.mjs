@@ -17,20 +17,25 @@ mkdirSync(distDir, { recursive: true });
 mkdirSync(instDir, { recursive: true });
 
 // 1) 构建产物：build\ 与 build\debug\ 下的 exe → installer\；便携版/Debug 版另复制到 dist\
+//    只收录「当前 VERSION」对应的产物，避免把旧版本 exe 混进新版本归档
 const buildDir = join(root, 'build');
+const versionExeRe = new RegExp(`v${version.replace(/\./g, '\\.')}\\.exe$`);
 const exeDirs = [buildDir, join(buildDir, 'debug')];
+let archived = 0;
 for (const dir of exeDirs) {
   if (!existsSync(dir)) continue;
   for (const f of readdirSync(dir)) {
-    if (!/\.exe$/.test(f)) continue;
+    if (!/\.exe$/.test(f) || !versionExeRe.test(f)) continue;
     const src = join(dir, f);
     cpSync(src, join(instDir, f));
     if (/Portable|Debug/.test(f)) cpSync(src, join(distDir, f));
+    archived++;
   }
 }
+if (!archived) console.warn(`⚠️  未找到 v${version} 的构建产物（可先运行 npm run dist:debug / dist:portable）`);
 
 // 2) 源码快照：排除构建产物、依赖、归档目录
-const EXCLUDE = new Set(['.git', 'node_modules', 'build', 'dist', 'installer', 'logs', 'versions', 'release', 'temp', 'resources']);
+const EXCLUDE = new Set(['.git', '.playwright-mcp', 'node_modules', 'build', 'dist', 'installer', 'logs', 'versions', 'release', 'temp', 'resources']);
 function copyFilter(s) {
   const rel = s.slice(root.length + 1);
   return !EXCLUDE.has(rel.split(/[\\/]/)[0]);

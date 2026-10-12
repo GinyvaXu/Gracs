@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0d14" />
+  <meta name="description" content="Gracs · 一起看屏幕：自托管屏幕共享，零外置联机软件，局域网/IPv6/公网自动直连" />
+  <title>Gracs · 一起看屏幕</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/assets/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="stylesheet" href="/css/style.css?v=__VERSION__" />
+</head>
+<body>
+  <div id="app">
+    <!-- ═══════════ 进入页 ═══════════ -->
+    <section id="screen-lobby" class="screen lobby">
+      <div class="lobby-card">
+        <div class="lobby-brand">
+          <div class="logo-mark">🖥️</div>
+          <div>
+            <h1>Gracs</h1>
+            <p class="tagline">一起看屏幕 · 自托管 · 零外置联机软件</p>
+          </div>
+        </div>
+
+        <div id="lobby-server" class="lobby-server"></div>
+        <div id="lobby-recover-banner" class="banner warn" hidden></div>
+
+        <div class="field">
+          <label for="input-username">昵称</label>
+          <input id="input-username" type="text" maxlength="16" placeholder="输入昵称" autocomplete="off" />
+        </div>
+
+        <div id="mode-fields" class="mode-cards">
+          <label class="mode-card">
+            <input type="radio" name="lobby-mode" id="mode-host" checked />
+            <span class="mode-icon">🏠</span>
+            <span class="mode-title">开房间</span>
+            <span class="mode-desc">本机作主机，好友按地址加入</span>
+          </label>
+          <label class="mode-card">
+            <input type="radio" name="lobby-mode" id="mode-guest" />
+            <span class="mode-icon">🔗</span>
+            <span class="mode-title">加入朋友</span>
+            <span class="mode-desc">填主机给出的地址</span>
+          </label>
+          <label class="mode-card">
+            <input type="radio" name="lobby-mode" id="mode-cloud" />
+            <span class="mode-icon">☁️</span>
+            <span class="mode-title">云房间</span>
+            <span class="mode-desc">房间码进出 · 免组网（信令走 Cloudflare）</span>
+          </label>
+        </div>
+
+        <div class="field" id="port-field">
+          <label for="input-port">主机端口（默认 3000）</label>
+          <input id="input-port" type="number" min="1024" max="65535" value="3000" autocomplete="off" />
+        </div>
+        <div class="field" id="address-field" hidden>
+          <label for="input-address">主机地址（IP:端口 / 域名:端口，IPv6 请加方括号）</label>
+          <input id="input-address" type="text" placeholder="例如 192.168.1.5:3000 或 [240e:xxxx::1]:3000" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="field" id="cloud-field" hidden>
+          <label for="input-cloud-code">云房间码（加入时填入；创建请留空）</label>
+          <input id="input-cloud-code" type="text" maxlength="8" placeholder="如 K7X2Q9；留空则创建新房间" autocomplete="off" spellcheck="false" />
+        </div>
+
+        <button id="btn-enter" class="btn primary big block">进入房间</button>
+
+        <div class="lobby-actions">
+          <button id="btn-network-lobby" class="btn ghost">🌐 网络诊断</button>
+          <button id="btn-settings-lobby" class="btn ghost">⚙️ 设置</button>
+          <button id="btn-about-lobby" class="btn ghost">ℹ️ 关于</button>
+        </div>
+
+        <p id="lobby-error" class="error" hidden></p>
+        <p id="lobby-caps" class="hint"></p>
+      </div>
+    </section>
+
+    <!-- ═══════════ 房间 ═══════════ -->
+    <section id="screen-room" class="screen room" hidden>
+      <header class="topbar">
+        <button id="btn-members" class="btn small mobile-only">👥<span id="chat-unread-mobile" class="unread" hidden>0</span></button>
+        <div class="brand"><span class="logo-dot"></span><b>Gracs</b></div>
+        <span id="conn-status" class="conn-status ok">● 已连接</span>
+        <span id="room-info" class="dim room-info"></span>
+        <div class="top-actions">
+          <button id="btn-invite" class="btn small">🔗 邀请</button>
+          <button id="btn-network" class="btn small">🌐 网络</button>
+          <button id="btn-stats-toggle" class="btn small">📶 质量</button>
+          <div class="dropdown-wrap">
+            <button id="btn-help" class="btn small">帮助 ▾</button>
+            <div id="menu-help" class="dropdown" hidden>
+              <button data-action="check-update">🔄 检查更新</button>
+              <button data-action="open-network">🌐 网络与联机</button>
+              <button data-action="open-settings">⚙️ 设置</button>
+              <button data-action="open-about">ℹ️ 关于 Gracs</button>
+              <button data-action="quit-app">⏻ 退出 Gracs</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="room-main">
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar-tabs">
+            <button id="tab-members" class="sidebar-tab active" type="button">👥 成员 <span id="member-count" class="chip">0</span></button>
+            <button id="tab-chat" class="sidebar-tab" type="button">💬 聊天 <span id="chat-unread" class="unread" hidden>0</span></button>
+          </div>
+          <div id="pane-members" class="sidebar-pane">
+            <ul id="member-list" class="member-list"></ul>
+          </div>
+          <div id="pane-chat" class="sidebar-pane" hidden>
+            <div id="chat-list" class="chat-list"></div>
+            <form id="chat-form" class="chat-form" autocomplete="off">
+              <input id="chat-input" type="text" maxlength="500" placeholder="说点什么…（回车发送）" />
+              <button class="btn primary" type="submit" id="chat-send">发送</button>
+            </form>
+          </div>
+          <div class="sidebar-foot">
+            <button id="btn-qr" class="btn ghost block">📱 扫码加入</button>
+            <button id="btn-leave" class="btn ghost danger block">🚪 离开房间</button>
+          </div>
+        </aside>
+
+        <section class="stage" id="stage">
+          <div id="stage-main" class="stage-main"></div>
+          <div id="stage-strip" class="stage-strip"></div>
+        </section>
+
+        <aside id="stats-panel" class="stats-panel" hidden>
+          <div class="stats-head">
+            <span>连接质量</span>
+            <button id="btn-stats-close" class="icon-btn" title="收起">✕</button>
+          </div>
+          <div id="stats-body" class="stats-body"></div>
+        </aside>
+      </main>
+
+      <footer class="bottombar">
+        <button id="btn-share" class="btn primary share-btn">🖥️ 共享屏幕</button>
+        <button id="btn-fullscreen" class="btn" title="全屏观看当前画面（Esc 退出）">⛶ 全屏</button>
+        <div class="ctl-group" id="share-controls">
+          <label class="ctl">链路
+            <select id="link-mode" title="标准链路延迟最低；影院模式画质最稳，适合看电影">
+              <option value="webrtc" selected>标准（低延迟）</option>
+              <option value="cinema">影院（画质稳）</option>
+            </select>
+          </label>
+          <label class="ctl">画质
+            <select id="preset-select"></select>
+          </label>
+          <label class="ctl check"><input type="checkbox" id="share-audio" checked /> 系统声音</label>
+        </div>
+        <span id="share-status" class="share-status"></span>
+        <span class="spacer"></span>
+        <span id="uplink-info" class="dim uplink-info"></span>
+      </footer>
+    </section>
+  </div>
+
+  <!-- ═══════════ 邀请（链接 + 二维码）═══════════ -->
+  <div id="modal-invite" class="modal" hidden>
+    <div class="modal-card">
+      <h3>🔗 邀请好友</h3>
+      <p class="dim">把地址发给好友（对方用浏览器打开即可加入，无需安装任何软件）：</p>
+      <div id="invite-links" class="link-list"></div>
+      <div class="qr-wrap"><img id="invite-qr" alt="加入二维码" /><p class="dim">手机扫码直接进入</p></div>
+      <div class="modal-actions">
+        <button id="btn-invite-close" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 网络诊断 ═══════════ -->
+  <div id="modal-network" class="modal" hidden>
+    <div class="modal-card wide">
+      <h3>🌐 网络诊断 · 零外置软件联机</h3>
+      <div id="network-verdict" class="verdict-list"></div>
+      <div id="network-detail" class="network-detail"></div>
+      <div class="modal-actions">
+        <button id="btn-network-deep" class="btn">🔍 深度检测（NAT 类型）</button>
+        <button id="btn-network-refresh" class="btn">🔄 重新检测</button>
+        <button id="btn-network-advanced" class="btn">🧰 高级备选（组网/穿透）</button>
+        <button id="btn-network-close" class="btn primary">关闭</button>
+      </div>
+      <div id="network-advanced" class="advanced-box" hidden>
+        <p class="dim">如果上面的直连方式都不可用（例如校园网/公司网封锁 UDP），可退回传统方案：</p>
+        <ul class="dim">
+          <li><b>Radmin VPN</b>（桌面版内置）：创建虚拟局域网后，用 26.x 虚拟 IP 连接</li>
+          <li><b>SakuraFrp / 内网穿透</b>：只有开房者需要安装，把本机端口映射成公网域名</li>
+          <li>详细教程见项目文档 <code>docs/fri-network.md</code></li>
+        </ul>
+        <div class="modal-actions">
+          <button id="btn-radmin-open" class="btn" hidden>🌐 打开 Radmin 联机</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 设置 ═══════════ -->
+  <div id="modal-settings" class="modal" hidden>
+    <div class="modal-card">
+      <h3>⚙️ 设置</h3>
+      <div class="field">
+        <label>默认链路</label>
+        <select id="set-link-mode">
+          <option value="webrtc">标准链路（WebRTC 低延迟）</option>
+          <option value="cinema">影院模式（WebCodecs 稳定画质）</option>
+        </select>
+        <p class="hint">标准链路适合游戏/互动；影院模式适合一起看电影，画质恒定不抖动。</p>
+      </div>
+      <div class="field">
+        <label>编码偏好（影院模式）</label>
+        <select id="set-codec">
+          <option value="auto">自动（优先硬件 H.264）</option>
+          <option value="compat">兼容优先（H.264）</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>上行带宽预算（共享时总上行上限）</label>
+        <select id="set-uplink">
+          <option value="10">10 Mbps（常见家宽上行较小）</option>
+          <option value="20" selected>20 Mbps（推荐）</option>
+          <option value="50">50 Mbps</option>
+          <option value="0">不限（局域网/光纤）</option>
+        </select>
+        <p class="hint">自动档会按这个预算给每位观看者分配码率；填小一点可避免卡顿，填大一点画质更好。</p>
+      </div>
+      <div class="field">
+        <label>默认画面比例</label>
+        <select id="set-aspect">
+          <option value="auto" selected>自适应</option>
+          <option value="169">16:9</option>
+          <option value="original">原始</option>
+          <option value="stretch">拉伸</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-open-server" class="btn" hidden>🖧 服务器设置</button>
+        <button id="btn-settings-close" class="btn primary">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 服务器设置（桌面版）═══════════ -->
+  <div id="modal-server" class="modal" hidden>
+    <div class="modal-card">
+      <h3>🖧 服务器设置</h3>
+      <div class="field">
+        <label><input type="radio" name="server-mode" id="server-mode-local" checked /> 本机开房间（推荐，零外置软件）</label>
+      </div>
+      <div class="field">
+        <label><input type="radio" name="server-mode" id="server-mode-remote" /> 连接朋友的房间</label>
+      </div>
+      <div class="field" id="server-port-field">
+        <label>本机端口（默认 3000）</label>
+        <input id="server-port" type="number" min="1024" max="65535" value="3000" autocomplete="off" />
+      </div>
+      <div class="field" id="server-address-field" hidden>
+        <label>好友地址（IP:端口 / 域名:端口）</label>
+        <input id="server-address" type="text" placeholder="例如 192.168.1.5:3000" autocomplete="off" spellcheck="false" />
+      </div>
+      <div class="field">
+        <label>本机可访问地址（发给好友）</label>
+        <div id="server-local-urls" class="link-list dim"></div>
+      </div>
+      <p class="hint">保存后应用会重启并自动进入房间。跨网络推荐直接用「网络诊断」里的公网/IPv6 地址。</p>
+      <div class="modal-actions">
+        <button id="btn-server-cancel" class="btn">取消</button>
+        <button id="btn-server-save" class="btn primary">保存并重启</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ Radmin（高级备选）═══════════ -->
+  <div id="modal-radmin" class="modal" hidden>
+    <div class="modal-card">
+      <h3>🌐 Radmin VPN（高级备选方案）</h3>
+      <p class="dim">仅当公网直连、IPv6、中继都不可用时才需要：所有成员加入同一虚拟网络，用 26.x 虚拟 IP 直连。</p>
+      <p id="radmin-status" class="dim">正在检测…</p>
+      <div class="field"><label>网络名称</label><input id="radmin-name" type="text" autocomplete="off" /></div>
+      <div class="field"><label>网络密码</label><input id="radmin-pwd" type="password" autocomplete="off" /></div>
+      <div class="modal-actions">
+        <button id="btn-radmin-install" class="btn">⬇️ 安装 Radmin VPN</button>
+        <button id="btn-radmin-create" class="btn primary">＋ 创建网络</button>
+        <button id="btn-radmin-join" class="btn">🔗 加入网络</button>
+        <button id="btn-radmin-refresh" class="btn">🔄 刷新状态</button>
+        <button id="btn-radmin-use-ip" class="btn">📋 填入我的 IP</button>
+      </div>
+      <p id="radmin-net-result" class="dim" hidden></p>
+      <div class="modal-actions"><button id="btn-radmin-cancel" class="btn">关闭</button></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 扫码 ═══════════ -->
+  <div id="modal-qr" class="modal" hidden>
+    <div class="modal-card narrow">
+      <h3>📱 扫码加入</h3>
+      <div class="qr-wrap"><img id="room-qr" alt="房间二维码" /></div>
+      <p id="qr-room-url" class="dim url-text"></p>
+      <div class="modal-actions">
+        <button id="btn-qr-copy" class="btn">复制链接</button>
+        <button id="btn-qr-close" class="btn primary">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 关于 ═══════════ -->
+  <div id="modal-about" class="modal" hidden>
+    <div class="modal-card">
+      <h3>ℹ️ 关于 Gracs</h3>
+      <p class="dim">版本 <b id="about-version">--</b> · 一起看屏幕</p>
+      <p><b>GRACS</b> = Ginyva Remote Access Cross-network Screen-sharing Solution<br/>
+        （Ginyva 远程接入 · 跨网络 · 屏幕共享方案）· 中文名 <b>格瑞克斯</b> · 读音 /ɡræks/</p>
+      <p>自托管屏幕共享：局域网 / IPv6 / 公网自动直连，严格网络自动中继；<br/>画面端到端加密，服务器只转发信令（影院模式经服务器转发码流）。</p>
+      <div id="about-env" class="about-env dim"></div>
+      <div class="modal-actions"><button id="btn-about-close" class="btn primary">关闭</button></div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 更新 ═══════════ -->
+  <div id="modal-update" class="modal" hidden>
+    <div class="modal-card">
+      <h3>🔄 软件更新</h3>
+      <p id="update-status" class="dim">检查更新中…</p>
+      <div id="update-info" class="update-info" hidden>
+        <p>当前 <b id="update-cur">--</b> → 新版本 <b id="update-new">--</b></p>
+        <div id="update-notes" class="update-notes"></div>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-update-now" class="btn primary" hidden>立即更新</button>
+        <button id="btn-update-cancel" class="btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 共享源选择（桌面版内置）═══════════ -->
+  <div id="modal-source-picker" class="modal" hidden>
+    <div class="modal-card wide">
+      <h3>🖥️ 选择要共享的内容</h3>
+      <p class="dim">共享期间可随时切换画质与链路；「影院模式」画质最稳，适合看电影。</p>
+      <div id="source-picker-grid" class="source-grid"></div>
+      <div class="modal-actions">
+        <button id="btn-source-cancel" class="btn">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 容器 -->
+  <div id="toast-box" class="toast-box"></div>
+
+  <script type="module" src="/js/main.js?v=__VERSION__"></script>
+</body>
+</html>

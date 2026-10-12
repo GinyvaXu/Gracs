@@ -5,7 +5,7 @@ import { join } from 'node:path';
 const root = process.cwd();
 const version = 'v' + readFileSync(join(root, 'VERSION'), 'utf8').trim();
 const outDir = join(root, 'release', `Debug-${version}`);
-const serverDir = join(outDir, 'GinyScreen-Server');
+const serverDir = join(outDir, 'Gracs-Server');
 
 // 安全校验：输出目录必须在项目根内
 if (!outDir.startsWith(root)) throw new Error('输出目录不在项目根内');
@@ -32,16 +32,16 @@ if (!existsSync(nmSrc)) throw new Error('缺少 node_modules，请先 npm instal
 cpSync(nmSrc, join(serverDir, 'node_modules'), { recursive: true });
 
 // 启动脚本（UTF-8 无 BOM）
-const bat = `@echo off\r\nchcp 65001 >nul\r\ntitle GinyScreen Debug Server\r\ncd /d "%~dp0GinyScreen-Server"\r\nif not exist "%~dp0logs" mkdir "%~dp0logs"\r\nset NODE_ENV=debug\r\nset LOG_DIR=%~dp0logs\r\necho ==================================================\r\necho   GinyScreen Debug\r\necho   工作日志: %~dp0logs\\work-日期.log\r\necho   报错日志: %~dp0logs\\error-日期.log\r\necho   启动后请打开浏览器: http://localhost:3000\r\necho   关闭本窗口即停止服务器\r\necho ==================================================\r\nstart "" http://localhost:3000\r\nnode server/index.js\r\necho.\r\necho 服务器已退出。按任意键关闭窗口...\r\npause >nul\r\n`;
-writeFileSync(join(outDir, 'Start-GinyScreen-Debug.bat'), bat, 'utf8');
+const bat = `@echo off\r\nchcp 65001 >nul\r\ntitle Gracs Debug Server\r\ncd /d "%~dp0Gracs-Server"\r\nif not exist "%~dp0logs" mkdir "%~dp0logs"\r\nset NODE_ENV=debug\r\nset LOG_DIR=%~dp0logs\r\necho ==================================================\r\necho   Gracs Debug\r\necho   工作日志: %~dp0logs\\work-日期.log\r\necho   报错日志: %~dp0logs\\error-日期.log\r\necho   启动后请打开浏览器: http://localhost:3000\r\necho   关闭本窗口即停止服务器\r\necho ==================================================\r\nstart "" http://localhost:3000\r\nnode server/index.js\r\necho.\r\necho 服务器已退出。按任意键关闭窗口...\r\npause >nul\r\n`;
+writeFileSync(join(outDir, 'Start-Gracs-Debug.bat'), bat, 'utf8');
 
-const logBat = `@echo off\r\nchcp 65001 >nul\r\nif not exist "%~dp0logs" (\r\n  echo 还没有日志文件，请先运行"Start-GinyScreen-Debug.bat"。\r\n  pause\r\n  exit /b\r\n)\r\nexplorer "%~dp0logs"\r\n`;
+const logBat = `@echo off\r\nchcp 65001 >nul\r\nif not exist "%~dp0logs" (\r\n  echo 还没有日志文件，请先运行"Start-Gracs-Debug.bat"。\r\n  pause\r\n  exit /b\r\n)\r\nexplorer "%~dp0logs"\r\n`;
 writeFileSync(join(outDir, 'Open-Logs.bat'), logBat, 'utf8');
 
-const readme = `【GinyScreen Debug ${version}】
+const readme = `【Gracs Debug ${version}】
 
 一、怎么启动
-  双击"Start-GinyScreen-Debug.bat"，会自动：
+  双击"Start-Gracs-Debug.bat"，会自动：
   1. 启动服务器（需已安装 Node.js 18+）
   2. 打开浏览器 http://localhost:3000
   3. 开始记录日志

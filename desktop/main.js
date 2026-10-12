@@ -1,4 +1,4 @@
-// desktop/main.js — GinyScreen桌面版（Electron 主进程）
+// desktop/main.js — Gracs桌面版（Electron 主进程）
 // 职责：内嵌启动信令服务器 → 打开主窗口；系统托盘驻留；日志落盘（Debug 版）
 import { app, BrowserWindow, Tray, Menu, nativeImage, clipboard, session, dialog, ipcMain, shell, desktopCapturer } from 'electron';
 import { dirname, join } from 'node:path';
@@ -61,9 +61,15 @@ let appUrl = '';
 let quitting = false;
 let serverPort = 3000;
 let pendingDisplayCapture = null; // { callback, audioRequested, sources }
+let lastDisplayPick = null;       // { sourceId, at } 最近一次用户在应用内选择器里选中的来源
+let lastDisplayPickInfo = null;   // { sourceId, type, pid, name, at } 同上（含窗口 PID，供「跟随共享窗口」音频源）
+let audioFallbackUntil = 0;       // 系统声音启动失败后的自动重试窗口（主进程收到 gv:audio-fallback 时设置）
+let helperAudioFallback = false;  // 自动重试时是否用 helper 兼容采集系统声音（true）还是仅画面（false）
+let systemAudioProc = null;       // 兼容模式系统声音采集进程（gv-helper audio capture）
 let activeWindowAudioSnapshot = null; // 窗口声音方案A：被静音应用的快照路径
 let remoteRecoveryShown = false;
 let localUrlForRecovery = '';
+let publicUrl = '';   // 自动端口映射成功后得到的公网入口（发给好友用）
 
 // ── 服务器连接配置（本机开服 / 连接朋友的远程服务器）──
 let connCfg = { mode: 'local', address: '', port: 3000, nickname: '' };
@@ -92,8 +98,21 @@ function readConnectionConfig() {
 
 function normalizeRemoteAddress(input) {
   let s = String(input).trim();
+  if (!s) return '';
   if (!/^https?:\/\//i.test(s)) {
-    // 内网/组网虚拟 IP、localhost 走明文 HTTP；公网域名（如 SakuraFrp 隧道）默认 HTTPS
+    // 裸 IPv6（含 2 个以上冒号且没有方括号）先自动补方括号，避免 new URL 直接失败
+    const colonCount = (s.match(/:/g) || []).length;
+    if (!s.startsWith('[') && colonCount >= 2) {
+      try {
+        new URL(`http://[${s}]`);      // 整串是一个合法 IPv6（无端口）→ 用默认端口
+        s = `[${s}]`;
+      } catch {
+        const m = s.match(/^(.*):(\d{1,5})$/);   // 否则尝试按「IPv6:端口」拆分
+        if (m && m[1].includes(':')) s = `[${m[1]}]:${m[2]}`;
+        else return '';
+      }
+    }
+    // 内网/组网虚拟 IP、localhost、【IPv6】走明文 HTTP；公网域名（如 SakuraFrp 隧道）默认 HTTPS
     const m = s.match(/^\[([^\]]+)\]|^([^:]+)/);
     const host = m ? (m[1] || m[2]) : s;
     const isLocal = /^[\d.]+$/.test(host) || host.includes(':') || /^(localhost|.+\.(local|lan|home))$/i.test(host);
@@ -116,12 +135,14 @@ function writeConnectionConfig(cfg) {
 
 function getLocalUrls(port) {
   const urls = [];
+  if (publicUrl) urls.push(publicUrl);   // 公网入口优先展示（零外置软件直连）
   for (const list of Object.values(networkInterfaces())) {
     for (const net of list ?? []) {
       if (net.internal || net.address === '::1' || net.address.startsWith('fe80')) continue;
       urls.push(net.family === 'IPv6' ? `http://[${net.address}]:${port}` : `http://${net.address}:${port}`);
     }
   }
+  if (serverHandle?.httpsPort) urls.push(`https://127.0.0.1:${serverHandle.httpsPort}`);
   return urls;
 }
 
@@ -129,15 +150,18 @@ async function bootstrap() {
   const isPackaged = app.isPackaged;
   const logDir = resolveLogDir(isPackaged);
   process.env.LOG_DIR = logDir;
+  // 可写状态目录：打包后 asar 内不可写，证书/中继密钥等持久化文件放这里
+  process.env.GV_STATE_DIR = logDir;
+  process.env.GV_CERT_DIR = join(logDir, 'certs');
   process.env.NODE_ENV = isDebugBuild ? 'debug' : 'production';
   process.env.DEBUG_LOG = isDebugBuild ? '1' : '0';
 
-  const { startGinyScreenServer } = await import('../server/app.js');
+  const { startGracsServer } = await import('../server/app.js');
   logger = (await import('../server/logger.js')).logger;
   const cdpArg = process.argv.find((a) => a.startsWith('--remote-debugging-port='));
   if (cdpArg) logger.work('远程调试端口: ' + cdpArg);
   logger.work('══════════════════════════════════════════');
-  logger.work('  🖥️ GinyScreen 桌面版启动中 (Debug 日志已开启)');
+  logger.work('  🖥️ Gracs 桌面版启动中 (Debug 日志已开启)');
   logger.work(`  日志目录: ${logDir}`);
   logger.work('══════════════════════════════════════════');
 
@@ -155,16 +179,34 @@ async function bootstrap() {
   // 语音/共享音频播放需要 WebAudio，桌面版放开自动播放限制
   app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
+  // 启动画面：尽早出现（服务启动 + 页面加载期间不再黑屏等待），主窗口就绪后淡出
+  await app.whenReady();
+  app.setAppUserModelId('com.gracs.app');
+  createSplash();
+  app.on('before-quit', () => closeSplash());
+
   // 始终启动本地服务器：本机开服时它是房间服务器；远程模式下作为「恢复页」兜底（失败时跳回本地设置页）
   try {
-    serverHandle = await startGinyScreenServer({
+    serverHandle = await startGracsServer({
       port: connCfg.port,   // 主机自选端口（默认 3000）
-      host: '::',           // 双栈监听：本机/局域网/ZeroTier 虚拟网/IPv6 均可访问
+      host: '::',           // 双栈监听：本机/局域网/IPv6 均可访问
       retryOnBusy: connCfg.mode === 'remote', // 本机开服端口必须严格；远程模式可自动换端口
+      onNetworkReady: () => {
+        const g = serverHandle?.network?.gateway;
+        const t = serverHandle?.network?.turn;
+        if (g?.ok && g.externalIp) {
+          const tcp = (g.mappings || []).find((m) => m.protocol === 'tcp' && m.internalPort === serverPort);
+          publicUrl = `http://${g.externalIp}:${tcp?.externalPort || serverPort}`;
+          logger.work(`公网入口已打通: ${publicUrl}`);
+        }
+        if (t?.running) logger.work(`内嵌中继服务运行中: UDP/TCP ${t.port}`);
+        refreshTrayMenu();
+      },
     });
   } catch (err) {
     logger.error('服务器启动失败:', err);
-    dialog.showErrorBox('GinyScreen', '服务器启动失败（端口可能被占用），请查看日志：\n' + (err?.message || String(err)));
+    closeSplash();
+    dialog.showErrorBox('Gracs', '服务器启动失败（端口可能被占用），请查看日志：\n' + (err?.message || String(err)));
     app.quit();
     return;
   }
@@ -185,10 +227,6 @@ async function bootstrap() {
 
   openDebugConsole(logDir);
 
-  app.setAppUserModelId('com.ginyscreen.app');
-
-  await app.whenReady();
-
   // 权限：屏幕采集 / 系统声音 自动放行（本软件只加载自家页面）
   // 注意：session 必须在 app ready 之后使用
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
@@ -200,6 +238,7 @@ async function bootstrap() {
   );
 
   wireDisplayCapture();
+  wireSystemAudioCapture();
 
   // 自动更新启动校验：上次安装是否已生效（参考诺丁汉 updater 的 boot marker）
   try {
@@ -222,6 +261,24 @@ async function bootstrap() {
 function wireDisplayCapture() {
   session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
     try {
+      // 系统声音启动失败（声卡驱动不兼容回环）后的自动降级：沿用上次选择的来源、仅画面、不再弹选择器
+      const canFallback = !request.audioRequested && lastDisplayPick
+        && Date.now() < audioFallbackUntil && Date.now() - lastDisplayPick.at < 60_000;
+      audioFallbackUntil = 0;
+      if (canFallback) {
+        const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
+        const source = sources.find((src) => src.id === lastDisplayPick.sourceId);
+        if (source) {
+          // 兼容模式（helper 采集系统声音）→ 保留窗口声音隔离；仅画面 → 恢复被静音的应用
+          const keepIsolation = helperAudioFallback;
+          helperAudioFallback = false;
+          if (!keepIsolation) await restoreMutedApps();
+          logger.work(`系统声音启动失败 → 自动沿用上次来源${keepIsolation ? '（兼容模式采集声音）' : '（仅画面）'}：${source.name}`);
+          callback({ video: source });
+          return;
+        }
+      }
+      helperAudioFallback = false;
       const sources = await desktopCapturer.getSources({
         types: ['screen', 'window'],
         thumbnailSize: { width: 320, height: 180 },
@@ -234,6 +291,7 @@ function wireDisplayCapture() {
         thumbnail: src.thumbnail && !src.thumbnail.isEmpty() ? src.thumbnail.toDataURL() : '',
       }));
       pendingDisplayCapture = { callback, audioRequested: request.audioRequested, sources };
+      logger.work(`屏幕采集请求：来源候选 ${sources.length} 个 · 页面请求音频=${request.audioRequested ? '是' : '否'}`);
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('gv:display-source-list', list);
       } else {
@@ -251,6 +309,19 @@ function wireDisplayCapture() {
     if (!pending) return;
     const source = pending.sources.find((src) => src.id === sourceId);
     if (!source) { pending.callback(null); return; }
+    lastDisplayPick = { sourceId: source.id, at: Date.now() };
+    // 记录本次选择（含窗口 PID，供「跟随共享窗口」音频源解析）
+    let pickPid = 0;
+    if (String(source.id).startsWith('window:')) {
+      try { pickPid = Number(await windowPidFromSource(source)) || 0; } catch { pickPid = 0; }
+    }
+    lastDisplayPickInfo = {
+      sourceId: source.id,
+      type: String(source.id).startsWith('screen:') ? 'screen' : 'window',
+      pid: pickPid,
+      name: source.name,
+      at: Date.now(),
+    };
     // 窗口声音方案A：共享「窗口」并勾选系统声音时，静音其它应用（含本机语音回放），
     // 让回环采集只包含该窗口的声音，也避免他人声音/杂音被当作共享音频传回。
     if (pending.audioRequested && String(source.id).startsWith('window:')) {
@@ -270,27 +341,155 @@ function wireDisplayCapture() {
       video: source,
       audio: pending.audioRequested ? 'loopback' : undefined,
     });
+    logger.work(`屏幕采集选择：${source.name}（${source.type}）· 系统声音=${pending.audioRequested ? 'loopback 回环采集（保留本机回放）' : '关闭（页面未请求音频）'}`);
   });
 
-  // 停止共享时恢复被静音的其他应用
-  ipcMain.on('gv:restore-window-audio', async () => {
-    if (!activeWindowAudioSnapshot) return;
-    const snap = activeWindowAudioSnapshot;
-    activeWindowAudioSnapshot = null;
-    try {
-      const r = await runHelper(['audio', 'restore', snap]);
-      logger.work('恢复音频会话 → ' + (r.ok ? r.out : (r.err || '失败')));
-    } catch (err) {
-      logger.error('恢复音频失败:', err);
-    }
-    try { rmSync(snap, { force: true }); } catch { /* 忽略 */ }
+  // 系统声音启动失败（页面收到 NotReadableError）→ 打开自动降级窗口：
+  // 下一次采集直接沿用上次来源、不弹选择器；useHelper=true 时渲染进程将用 helper 兼容采集系统声音
+  ipcMain.handle('gv:audio-fallback', (_e, opts = {}) => {
+    audioFallbackUntil = Date.now() + 30_000;
+    helperAudioFallback = !!(opts && opts.useHelper);
+    logger.work('系统声音启动失败：下次采集将自动沿用上次来源' + (helperAudioFallback ? '（兼容模式：helper 采集系统声音）' : '（仅画面，不再弹选择器）'));
+    return { ok: true };
   });
+
+  // 停止共享 / 降级时恢复被静音的其他应用
+  ipcMain.on('gv:restore-window-audio', () => { restoreMutedApps(); });
 
   ipcMain.on('gv:cancel-display-source', () => {
     const pending = pendingDisplayCapture;
     pendingDisplayCapture = null;
     pending?.callback(null);
   });
+}
+
+/** 发送事件到主窗口（窗口不存在/已销毁时静默忽略） */
+function sendToWindow(channel, payload) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  } catch { /* 忽略 */ }
+}
+
+// ── 兼容模式系统声音：helper 回环采集（NAudio）→ 裸 PCM 流 → 渲染进程合成音轨 ──
+// 用于 Chromium/Electron 自带回环在部分声卡驱动上失败
+// （NotReadableError: Could not start audio source）的机器。
+function wireSystemAudioCapture() {
+  const stopCapture = () => {
+    const p = systemAudioProc;
+    systemAudioProc = null;
+    if (!p) return;
+    try { p.kill(); } catch { /* 忽略 */ }
+  };
+
+  ipcMain.handle('gv:system-audio-start', async (_e, opts = {}) => {
+    stopCapture();
+    const helper = helperPath();
+    if (!existsSync(helper)) return { ok: false, error: '缺少音频兼容组件（gv-helper.exe）' };
+    const pid = Number(opts?.pid) || 0;
+    return await new Promise((resolve) => {
+      let settled = false;
+      let headerDone = false;
+      let header = '';
+      const finish = (res) => { if (!settled) { settled = true; resolve(res); } };
+      let proc;
+      try {
+        const args = pid > 0 ? ['audio', 'capture', '--pid', String(pid)] : ['audio', 'capture'];
+        proc = spawn(helper, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      } catch (err) {
+        finish({ ok: false, error: String(err?.message || err) });
+        return;
+      }
+      systemAudioProc = proc;
+      const timer = setTimeout(() => { finish({ ok: false, error: '采集启动超时' }); stopCapture(); }, 8000);
+
+      proc.stdout.on('data', (buf) => {
+        if (!headerDone) {
+          header += buf.toString('latin1');
+          const nl = header.indexOf('\n');
+          if (nl < 0) return;
+          headerDone = true;
+          const line = header.slice(0, nl).trim();
+          const rest = Buffer.from(header.slice(nl + 1), 'latin1');
+          const m = /^#PCM (\d+) (\d+) 16$/.exec(line);
+          if (!m) {
+            finish({ ok: false, error: '输出格式无效: ' + line.slice(0, 40) });
+            stopCapture();
+            return;
+          }
+          const format = { rate: Number(m[1]), channels: Number(m[2]) };
+          logger.work(`系统声音兼容采集已启动：${format.rate}Hz × ${format.channels}ch`);
+          sendToWindow('gv:system-audio-format', format);
+          if (rest.length) sendToWindow('gv:system-audio-chunk', rest);
+          clearTimeout(timer);
+          finish({ ok: true, format });
+          return;
+        }
+        sendToWindow('gv:system-audio-chunk', buf);
+      });
+      proc.stderr.on('data', (b) => logger.error('gv-helper(audio capture): ' + String(b).trim()));
+      proc.on('error', (err) => {
+        clearTimeout(timer);
+        finish({ ok: false, error: String(err?.message || err) });
+      });
+      proc.on('exit', (code) => {
+        clearTimeout(timer);
+        if (systemAudioProc === proc) systemAudioProc = null;
+        sendToWindow('gv:system-audio-end');
+        if (settled) logger.work(`系统声音兼容采集结束（code ${code ?? '?'}）`);
+        else finish({ ok: false, error: `采集进程退出（code ${code ?? '?'}）` });
+      });
+    });
+  });
+
+  // 列出当前发声的应用（用于「音频源：指定应用」选择器）
+  ipcMain.handle('gv:audio-sessions', () => new Promise((resolve) => {
+    const helper = helperPath();
+    if (!existsSync(helper)) return resolve({ ok: false, error: '缺少音频组件（gv-helper.exe）' });
+    let out = '';
+    let child;
+    try {
+      child = spawn(helper, ['audio', 'list'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      return resolve({ ok: false, error: String(err?.message || err) });
+    }
+    child.stdout.on('data', (b) => { out += b.toString('utf8'); });
+    child.on('error', (err) => resolve({ ok: false, error: String(err?.message || err) }));
+    child.on('exit', () => {
+      const lines = out.split(/\r?\n/).filter((l) => l.length);
+      const header = lines.shift() || '';
+      const device = (/device=(.*?) sessions=/.exec(header) || [])[1] || '';
+      const sessions = [];
+      for (const raw of lines) {
+        const m = /^(\d+)\t([^\t]*)\tmuted=([01])$/.exec(raw.replace(/\r$/, ''));
+        if (m) sessions.push({ pid: Number(m[1]), name: m[2], muted: m[3] === '1' });
+      }
+      resolve({ ok: true, device, sessions });
+    });
+  }));
+
+  // 最近一次屏幕/窗口选择（含窗口 PID 与新鲜度，用于「跟随共享窗口」音频源）
+  ipcMain.handle('gv:last-display-pick', () => {
+    const info = lastDisplayPickInfo;
+    if (!info) return null;
+    return { ...info, fresh: Date.now() - info.at < 60_000 };
+  });
+
+  ipcMain.on('gv:system-audio-stop', () => stopCapture());
+  app.on('before-quit', () => stopCapture());
+}
+
+/** 恢复「窗口声音」方案中为隔离声音而静音的其它应用（幂等：无快照时直接返回） */
+async function restoreMutedApps() {
+  if (!activeWindowAudioSnapshot) return;
+  const snap = activeWindowAudioSnapshot;
+  activeWindowAudioSnapshot = null;
+  try {
+    const r = await runHelper(['audio', 'restore', snap]);
+    logger.work('恢复音频会话 → ' + (r.ok ? r.out : (r.err || '失败')));
+  } catch (err) {
+    logger.error('恢复音频失败:', err);
+  }
+  try { rmSync(snap, { force: true }); } catch { /* 忽略 */ }
 }
 
 function resolveLogDir(isPackaged) {
@@ -317,11 +516,11 @@ function openDebugConsole(logDir) {
   if (!app.isPackaged || !isDebugBuild) return; // 开发模式日志已在终端可见；正式版不弹控制台
   try {
     const scriptPath = join(logDir, '_debug-console.ps1');
-    const ps = `$Host.UI.RawUI.WindowTitle = 'GinyScreen Debug 控制台'
+    const ps = `$Host.UI.RawUI.WindowTitle = 'Gracs Debug 控制台'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 chcp 65001 > $null
 Write-Host '=================================================='
-Write-Host '  GinyScreen Debug 控制台 - 实时日志'
+Write-Host '  Gracs Debug 控制台 - 实时日志'
 Write-Host ('  日志目录: ' + '${logDir}')
 Write-Host '  关闭本窗口不影响程序运行；退出程序后窗口自动失效'
 Write-Host '=================================================='
@@ -357,17 +556,73 @@ while ($true) {
   } catch { /* 控制台打不开不阻塞主程序 */ }
 }
 
-function createWindow() {
-  const iconPath = join(__dirname, '..', 'assets', 'tray.png');
+// ── 启动画面：品牌加载动画（服务启动/页面加载期间显示，主窗口就绪后淡出）──
+let splashWindow = null;
+const SPLASH_HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+  html,body{margin:0;height:100%;background:#0b0d14;overflow:hidden}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:#e8ecf8;
+    background:radial-gradient(600px 320px at 50% -10%,rgba(77,212,200,.1),transparent 60%),#0b0d14}
+  .mark{position:relative;width:84px;height:84px;display:grid;place-items:center}
+  .scr{font-size:40px;filter:drop-shadow(0 0 14px rgba(77,212,200,.45));animation:breathe 1.8s ease-in-out infinite}
+  .ring{position:absolute;inset:0;border-radius:50%;border:2px solid transparent;border-top-color:#4dd4c8;animation:spin 1s linear infinite}
+  .ring::after{content:"";position:absolute;inset:6px;border-radius:50%;border:2px solid transparent;border-bottom-color:rgba(139,124,246,.85);animation:spin 1.6s linear infinite reverse}
+  .title{font-size:22px;font-weight:700;letter-spacing:.5px}
+  .sub{font-size:12px;color:#97a0b8}
+  .dots{display:flex;gap:6px}
+  .dots i{width:6px;height:6px;border-radius:50%;background:#4dd4c8;opacity:.35;animation:dot 1.2s ease-in-out infinite}
+  .dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+  @keyframes dot{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+</style></head><body>
+  <div class="mark"><span class="scr">🖥️</span><span class="ring"></span></div>
+  <div class="title">Gracs</div>
+  <div class="sub">一起看屏幕 · 正在启动本机服务…</div>
+  <div class="dots"><i></i><i></i><i></i></div>
+</body></html>`;
+
+function createSplash() {
+  try {
+    splashWindow = new BrowserWindow({
+      width: 420, height: 240,
+      frame: false, resizable: false, movable: true, show: false,
+      alwaysOnTop: true, skipTaskbar: true, fullscreenable: false,
+      backgroundColor: '#0b0d14',
+      icon: join(__dirname, '..', 'assets', 'tray.png'),
+      webPreferences: { sandbox: true, contextIsolation: true },
+    });
+    splashWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(SPLASH_HTML));
+    splashWindow.once('ready-to-show', () => { try { splashWindow?.show(); } catch { /* 忽略 */ } });
+    splashWindow.on('closed', () => { splashWindow = null; });
+  } catch { splashWindow = null; }
+}
+
+function closeSplash() {
+  const w = splashWindow;
+  splashWindow = null;
+  if (!w) return;
+  try {
+    let opacity = 1;
+    const timer = setInterval(() => {
+      opacity -= 0.14;
+      if (opacity <= 0) { clearInterval(timer); try { w.destroy(); } catch { /* 忽略 */ } return; }
+      try { w.setOpacity(opacity); } catch { clearInterval(timer); try { w.destroy(); } catch { /* 忽略 */ } }
+    }, 24);
+  } catch { try { w.destroy(); } catch { /* 忽略 */ } }
+}
+
+function createWindow() {  const iconPath = join(__dirname, '..', 'assets', 'tray.png');
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
     minWidth: 960,
     minHeight: 640,
-    title: 'GinyScreen',
+    title: 'Gracs',
     icon: iconPath,
     backgroundColor: '#14151a',
     autoHideMenuBar: true,
+    show: false,   // 等 ready-to-show 再显示，避免白屏闪烁（启动画面淡出衔接）
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -375,10 +630,39 @@ function createWindow() {
     },
   });
   mainWindow.loadURL(appUrl);
+  // 安全：外部链接一律交给系统浏览器；主窗口不允许导航离开应用页面
+  // （preload 桥暴露了设置/更新等能力，页面被导航到第三方站点会带来风险）
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) { try { shell.openExternal(url); } catch { /* 忽略 */ } }
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    try {
+      const target = new URL(url);
+      const current = new URL(appUrl);
+      const sameServer = target.host === current.host || (!!remoteOrigin && url.startsWith(remoteOrigin));
+      if (sameServer || target.protocol === 'file:') return;
+      e.preventDefault();
+      if (/^https?:/i.test(url)) { try { shell.openExternal(url); } catch { /* 忽略 */ } }
+    } catch {
+      e.preventDefault();
+    }
+  });
+  // 主窗口就绪 → 显示并淡出启动画面；远程模式加载慢/失败时 12s 兜底（恢复页接管）
+  mainWindow.once('ready-to-show', () => {
+    try { mainWindow.show(); } catch { /* 忽略 */ }
+    closeSplash();
+  });
+  setTimeout(() => {
+    if (splashWindow) closeSplash();
+    try {
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();
+    } catch { /* 忽略 */ }
+  }, 12_000);
   mainWindow.webContents.on('render-process-gone', (_e, details) =>
     writeCrashReport('renderer-gone', new Error(JSON.stringify(details)))
   );
-  // 远程模式：加载失败 / 返回非 GinyScreen 页面（如 SakuraFrp 501 拦截页）时跳回本地设置页
+  // 远程模式：加载失败 / 返回非 Gracs 页面（如 SakuraFrp 501 拦截页）时跳回本地设置页
   if (connCfg.mode === 'remote' && remoteOrigin) {
     remoteRecoveryShown = false;
     const wc = mainWindow.webContents;
@@ -392,7 +676,7 @@ function createWindow() {
         const u = wc.getURL();
         if (!u.startsWith(remoteOrigin)) return; // 恢复页/本地页不检查
         const isApp = await wc.executeJavaScript("!!(document.getElementById('screen-lobby')||document.getElementById('screen-room'))");
-        if (!isApp) showRemoteRecovery(`目标地址 ${u} 返回的不是 GinyScreen 界面（可能被网络拦截）`);
+        if (!isApp) showRemoteRecovery(`目标地址 ${u} 返回的不是 Gracs 界面（可能被网络拦截）`);
       } catch { /* 页面异常时保持现状 */ }
     });
   }
@@ -412,15 +696,20 @@ function createTray() {
   if (process.platform === 'darwin') return;
   const image = nativeImage.createFromPath(join(__dirname, '..', 'assets', 'tray.png'));
   tray = new Tray(image);
-  tray.setToolTip('GinyScreen');
+  tray.setToolTip('Gracs');
+  refreshTrayMenu();
+  tray.on('double-click', () => showMainWindow());
+}
+
+function refreshTrayMenu() {
+  if (!tray) return;
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: '打开主界面', click: () => showMainWindow() },
+    { label: '复制访问地址', click: () => clipboard.writeText(remoteOrigin || publicUrl || getLocalUrls(serverPort)[0] || appUrl) },
     { label: '返回服务器设置', click: () => { if (remoteOrigin) { remoteRecoveryShown = false; showRemoteRecovery('手动返回设置'); } } },
-    { label: '复制访问地址', click: () => clipboard.writeText(remoteOrigin || getLocalUrls(serverPort)[0] || appUrl) },
     { type: 'separator' },
     { label: '退出', click: () => { quitting = true; shutdown(); } },
   ]));
-  tray.on('double-click', () => showMainWindow());
 }
 
 function showRemoteRecovery(reason) {
@@ -528,7 +817,7 @@ function wireUpdater() {
     const r = await runHelper(['radmin', mode, String(name || ''), String(pwd || '')], 60_000);
     return r.ok ? { ok: true, output: r.out } : { ok: false, error: r.out || r.err || '操作失败，请查看日志' };
   });
-  // 界面内退出（帮助 → 退出 GinyScreen）
+  // 界面内退出（帮助 → 退出 Gracs）
   ipcMain.on('gv:quit', () => { quitting = true; shutdown(); });
 }
 
@@ -609,13 +898,14 @@ function isRadminInstalled() {
 function shutdown() {
   try { serverHandle?.server?.closeAllConnections?.(); } catch { /* 忽略 */ }
   try { serverHandle?.server?.close(); } catch { /* 忽略 */ }
+  try { serverHandle?.stop?.(); } catch { /* 清理中继与端口映射 */ }
   app.quit();
 }
 
 app.on('window-all-closed', () => { /* 驻留托盘，不退出 */ });
 app.on('before-quit', () => { quitting = true; });
 app.on('will-quit', () => {
-  try { serverHandle?.server?.close(); } catch { /* 兜底关闭 */ }
+  try { serverHandle?.stop?.(); } catch { /* 兜底清理 */ }
   if (activeWindowAudioSnapshot) {
     try {
       const snap = activeWindowAudioSnapshot;
