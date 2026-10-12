@@ -31,7 +31,7 @@ update.json       自动更新清单（版本/下载地址/更新说明，随 gi
 npm start               # 浏览器版：启动服务器（http://localhost:3000，自动开 HTTPS :3001）
 npm run electron        # 桌面版开发运行
 npm test                # 端到端冒烟测试（30 项断言，需先 npm start）
-npm run icon            # 重新生成图标（含 client/assets PWA 图标）
+npm run icon            # 从 assets/design-*/ 设计素材同步图标（桌面/PWA/favicon；不再程序化绘制）
 npm run helper          # 从源码编译 resources/gv-helper.exe（.NET Framework csc，需要 NAudio DLL 已就位）
 npm run dist:debug      # 构建 Debug 版 exe（控制台+日志+DevTools，每次迭代必出）
 npm run dist:portable   # 构建便携版 exe（构建前自动从 VERSION 同步版本号）
@@ -101,7 +101,8 @@ RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测�
 - 日志：Debug 版双写 work-日期.log / error-日期.log，目录由 LOG_DIR 控制；桌面版写在 exe 旁 logs\
 - 前端要求安全上下文才能采集屏幕：localhost 与桌面版天然满足；局域网其它电脑需用 HTTPS（自动生成的自签名证书，端口 = 端口+1）
 - mesh 适合 2~4 人共享/观看；更大规模需 SFU（mediasoup/LiveKit，见 docs/tech-alternatives.md）
-- 构建产物一律英文命名（Gracs-Debug/Portable/Setup-vX.Y.Z.exe）；目录不含中文
+- **图标**：以 `assets/design-*/` 设计素材为唯一来源（交接单见 docs/图标交接-*.md）；换图标 = 放入新素材目录 → `npm run icon`（同步桌面/PWA/favicon，禁止改回程序化绘制）
+- **包名**：构建产物一律英文命名（Gracs-Debug/Portable/Setup-vX.Y.Z.exe）；目录不含中文
 
 ## 当前状态
 - 版本：v2.5.0（**安全加固 + 启动动画与全流程体验优化**）

@@ -3,6 +3,14 @@
 本项目遵循语义化版本（Semantic Versioning），版本号以根目录 `VERSION` 文件为唯一来源。
 版本发布流程见 `VERSIONING.md`。
 
+## [v2.5.1] - 2026-10-12
+
+### 更换
+- **应用图标换新（G+播放 · 清新薄荷）**：浅薄荷渐变圆角方底 + 青蓝「G 内嵌播放键」符号，与 VIDAR 同款配色。
+  桌面版（窗口 / 托盘 / 安装包）、PWA（192 / 512 / maskable-512）与 favicon 全部替换。
+  - `scripts/gen-icon.mjs` 改为「从设计素材同步」：以 `assets/design-*/` 为唯一来源（不再程序化绘制），
+    `npm run icon` 不会覆盖新设计；favicon 由 SVG 改为 PNG（32/64，与设计交付一致）。
+
 ## [v2.5.0] - 2026-10-12
 
 ### 新增

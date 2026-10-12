@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" width="112" alt="Gracs — G+播放 · 清新薄荷" />
+</p>
+
 # 🖥️ Gracs — 一起看屏幕
 
 > **自托管屏幕共享工具**：房间里谁都能开播，其他人跟着看 —— 一起看视频、电影、游戏画面。
