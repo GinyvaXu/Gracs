@@ -62,6 +62,7 @@ let quitting = false;
 let serverPort = 3000;
 let pendingDisplayCapture = null; // { callback, audioRequested, sources }
 let lastDisplayPick = null;       // { sourceId, at } 最近一次用户在应用内选择器里选中的来源
+let lastDisplayPickInfo = null;   // { sourceId, type, pid, name, at } 同上（含窗口 PID，供「跟随共享窗口」音频源）
 let audioFallbackUntil = 0;       // 系统声音启动失败后的自动重试窗口（主进程收到 gv:audio-fallback 时设置）
 let helperAudioFallback = false;  // 自动重试时是否用 helper 兼容采集系统声音（true）还是仅画面（false）
 let systemAudioProc = null;       // 兼容模式系统声音采集进程（gv-helper audio capture）
@@ -306,6 +307,18 @@ function wireDisplayCapture() {
     const source = pending.sources.find((src) => src.id === sourceId);
     if (!source) { pending.callback(null); return; }
     lastDisplayPick = { sourceId: source.id, at: Date.now() };
+    // 记录本次选择（含窗口 PID，供「跟随共享窗口」音频源解析）
+    let pickPid = 0;
+    if (String(source.id).startsWith('window:')) {
+      try { pickPid = Number(await windowPidFromSource(source)) || 0; } catch { pickPid = 0; }
+    }
+    lastDisplayPickInfo = {
+      sourceId: source.id,
+      type: String(source.id).startsWith('screen:') ? 'screen' : 'window',
+      pid: pickPid,
+      name: source.name,
+      at: Date.now(),
+    };
     // 窗口声音方案A：共享「窗口」并勾选系统声音时，静音其它应用（含本机语音回放），
     // 让回环采集只包含该窗口的声音，也避免他人声音/杂音被当作共享音频传回。
     if (pending.audioRequested && String(source.id).startsWith('window:')) {
@@ -365,10 +378,11 @@ function wireSystemAudioCapture() {
     try { p.kill(); } catch { /* 忽略 */ }
   };
 
-  ipcMain.handle('gv:system-audio-start', async () => {
+  ipcMain.handle('gv:system-audio-start', async (_e, opts = {}) => {
     stopCapture();
     const helper = helperPath();
     if (!existsSync(helper)) return { ok: false, error: '缺少音频兼容组件（gv-helper.exe）' };
+    const pid = Number(opts?.pid) || 0;
     return await new Promise((resolve) => {
       let settled = false;
       let headerDone = false;
@@ -376,7 +390,8 @@ function wireSystemAudioCapture() {
       const finish = (res) => { if (!settled) { settled = true; resolve(res); } };
       let proc;
       try {
-        proc = spawn(helper, ['audio', 'capture'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+        const args = pid > 0 ? ['audio', 'capture', '--pid', String(pid)] : ['audio', 'capture'];
+        proc = spawn(helper, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
       } catch (err) {
         finish({ ok: false, error: String(err?.message || err) });
         return;
@@ -421,6 +436,39 @@ function wireSystemAudioCapture() {
         else finish({ ok: false, error: `采集进程退出（code ${code ?? '?'}）` });
       });
     });
+  });
+
+  // 列出当前发声的应用（用于「音频源：指定应用」选择器）
+  ipcMain.handle('gv:audio-sessions', () => new Promise((resolve) => {
+    const helper = helperPath();
+    if (!existsSync(helper)) return resolve({ ok: false, error: '缺少音频组件（gv-helper.exe）' });
+    let out = '';
+    let child;
+    try {
+      child = spawn(helper, ['audio', 'list'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      return resolve({ ok: false, error: String(err?.message || err) });
+    }
+    child.stdout.on('data', (b) => { out += b.toString('utf8'); });
+    child.on('error', (err) => resolve({ ok: false, error: String(err?.message || err) }));
+    child.on('exit', () => {
+      const lines = out.split(/\r?\n/).filter((l) => l.length);
+      const header = lines.shift() || '';
+      const device = (/device=(.*?) sessions=/.exec(header) || [])[1] || '';
+      const sessions = [];
+      for (const raw of lines) {
+        const m = /^(\d+)\t([^\t]*)\tmuted=([01])$/.exec(raw.replace(/\r$/, ''));
+        if (m) sessions.push({ pid: Number(m[1]), name: m[2], muted: m[3] === '1' });
+      }
+      resolve({ ok: true, device, sessions });
+    });
+  }));
+
+  // 最近一次屏幕/窗口选择（含窗口 PID 与新鲜度，用于「跟随共享窗口」音频源）
+  ipcMain.handle('gv:last-display-pick', () => {
+    const info = lastDisplayPickInfo;
+    if (!info) return null;
+    return { ...info, fresh: Date.now() - info.at < 60_000 };
   });
 
   ipcMain.on('gv:system-audio-stop', () => stopCapture());

@@ -155,6 +155,7 @@
             <select id="preset-select"></select>
           </label>
           <label class="ctl check"><input type="checkbox" id="share-audio" checked /> 系统声音</label>
+          <button id="btn-audio-source" class="btn small" type="button" hidden>🔊 整机声音</button>
         </div>
         <span id="share-status" class="share-status"></span>
         <span class="spacer"></span>
@@ -347,6 +348,28 @@
       <div id="source-picker-grid" class="source-grid"></div>
       <div class="modal-actions">
         <button id="btn-source-cancel" class="btn">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 音频源选择（桌面版：按应用采声）═══════════ -->
+  <div id="modal-audio-source" class="modal" hidden>
+    <div class="modal-card wide">
+      <h3>🎚️ 选择共享的音频来源</h3>
+      <p class="dim">「指定应用」只采集该应用的声音（含其子进程），语音软件不会被采进去，也不会被静音——边看边聊不再有回音。</p>
+      <div class="audio-source-modes">
+        <label class="audio-mode"><input type="radio" name="audio-source-mode" value="system" checked /> <b>🔊 整机声音</b><span>采集电脑全部声音（默认）</span></label>
+        <label class="audio-mode"><input type="radio" name="audio-source-mode" value="follow" /> <b>🪟 跟随共享窗口</b><span>共享窗口时只采该窗口的声音；共享整个屏幕时采整机</span></label>
+        <label class="audio-mode"><input type="radio" name="audio-source-mode" value="app" /> <b>🎯 指定应用</b><span>只采下面选中的应用（适合播放器 + 语音软件同时使用）</span></label>
+      </div>
+      <div class="audio-app-head">
+        <span class="dim">正在发声的应用</span>
+        <button id="btn-audio-refresh" class="btn small ghost" type="button">🔄 刷新</button>
+      </div>
+      <div id="audio-app-list" class="audio-app-list"></div>
+      <div class="modal-actions">
+        <button id="btn-audio-cancel" class="btn" type="button">取消</button>
+        <button id="btn-audio-ok" class="btn primary" type="button">确定</button>
       </div>
     </div>
   </div>

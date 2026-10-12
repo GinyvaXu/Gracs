@@ -403,6 +403,27 @@ input[type="range"] { accent-color: var(--accent); }
 .source-name { display: block; padding: 8px 10px 2px; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .source-type { display: block; padding: 0 10px 8px; font-size: 11px; color: var(--dim); }
 
+/* ── 音频源弹窗（桌面版：按应用采声）── */
+.audio-source-modes { display: grid; gap: 6px; margin: 6px 0 10px; }
+.audio-mode {
+  display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 2px; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer;
+}
+.audio-mode:hover { background: var(--panel); }
+.audio-mode input { grid-row: span 2; align-self: start; margin-top: 3px; }
+.audio-mode b { font-size: 13px; }
+.audio-mode span { grid-column: 2; font-size: 12px; color: var(--dim); }
+.audio-app-head { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 6px; font-size: 12px; }
+.audio-app-list { display: grid; gap: 4px; max-height: 220px; overflow: auto; padding: 2px; }
+.audio-app-row {
+  text-align: left; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--text); cursor: pointer; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.audio-app-row:hover { background: var(--panel-strong); }
+.audio-app-row.active { border-color: var(--accent); color: var(--accent); }
+.audio-app-empty { padding: 8px 10px; }
+
 /* ── 伪全屏（CSS 覆盖视口；iOS 等不支持 Fullscreen API 的设备兜底）── */
 .tile.pseudo-fullscreen {
   position: fixed; inset: 0; z-index: 400;

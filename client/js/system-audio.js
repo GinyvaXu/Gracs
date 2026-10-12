@@ -3,15 +3,18 @@
 // （NotReadableError: Could not start audio source）时，改用内置 gv-helper 的 NAudio 回环采集，
 // 由主进程把裸 PCM 流经 IPC 送进渲染进程，这里合成一条可用于 WebRTC 的音频轨。
 // 仅桌面版可用（window.gvDesktop.startSystemAudio）。
-export async function startHelperSystemAudio() {
+// opts.pid > 0：只采集该进程及其子进程的声音（按应用采声）；0/省略：整机混音
+export async function startHelperSystemAudio({ pid = 0 } = {}) {
   const api = window.gvDesktop;
   if (!api?.startSystemAudio) throw new Error('当前环境不支持兼容模式采集');
 
   let onFormat;
+  let formatTimer = null;
   const formatP = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('等待采集格式超时')), 8000);
-    onFormat = (f) => { clearTimeout(timer); resolve(f); };
+    formatTimer = setTimeout(() => reject(new Error('等待采集格式超时')), 8000);
+    onFormat = (f) => { clearTimeout(formatTimer); resolve(f); };
   });
+  formatP.catch(() => { /* 已在下面 await / 或用 res.format，避免未处理 rejection */ });
   const offFormat = api.onSystemAudioFormat?.(onFormat) || null;
 
   let queue = [];          // Float32 交错（L,R,L,R,…）
@@ -38,8 +41,9 @@ export async function startHelperSystemAudio() {
   };
 
   try {
-    const res = await api.startSystemAudio();
+    const res = await api.startSystemAudio({ pid: Number(pid) || 0 });
     if (!res || res.ok === false) throw new Error(res?.error || '启动失败');
+    if (res.format && formatTimer) clearTimeout(formatTimer);
     const format = res.format || await formatP;
     if (!format?.rate) throw new Error('未获取到采集格式');
 

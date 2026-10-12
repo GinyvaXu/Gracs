@@ -24,8 +24,12 @@ function isAudioStartError(err) {
 }
 
 /** 采集屏幕（可选系统声音）；Electron 桌面版会走内置源选择器。
- *  系统声音启动失败（声卡驱动不兼容回环）时自动降级为「仅画面」，不再让整个共享失败。 */
-export async function startScreenShare({ presetKey = DEFAULT_PRESET, withAudio = false, sourceId = null } = {}) {
+ *  audioSource：{ mode: 'system' | 'follow' | 'app', pid?, name? }
+ *   - system：整机声音（优先 Chromium 原生回环，失败走 helper 兼容采集，再失败仅画面）
+ *   - follow：跟随共享窗口（共享窗口 → 只采该窗口应用的声音；共享整屏 → 整机声音），桌面版走 helper
+ *   - app   ：指定应用（只采该应用及其子进程的声音），桌面版走 helper
+ *  按应用/跟随模式不会触发「静音其它应用」：语音软件正常出声且不会被采进去（避免朋友听到自己的回音）。 */
+export async function startScreenShare({ presetKey = DEFAULT_PRESET, withAudio = false, sourceId = null, audioSource = null } = {}) {
   const preset = getPreset(presetKey);
   const video = {
     frameRate: { ideal: preset.fps, max: preset.maxFps },
@@ -44,36 +48,89 @@ export async function startScreenShare({ presetKey = DEFAULT_PRESET, withAudio =
   const constraints = { video, audio: !!withAudio };
   if (sourceId && window.gvDesktop) constraints.video = { ...video, mandatory: { chromeMediaSource: 'desktop', chromeMediaSourceId: sourceId } };
 
+  const mode = withAudio ? (audioSource?.mode || 'system') : 'off';
   let stream;
   let audioFallback = false;
-  let helperAudio = null;
-  try {
-    stream = await navigator.mediaDevices.getDisplayMedia(constraints);
-  } catch (err) {
-    if (!withAudio || !isAudioStartError(err)) throw err;
-    // 系统声音启动失败：桌面版尝试「兼容模式」——用内置 helper（NAudio）回环采集绕过声卡驱动限制；
-    // 仍失败则降级为仅画面。两种重试都沿用上次来源，不会弹第二次选择器。
-    console.warn('系统声音采集失败，尝试兼容模式：', err);
-    audioFallback = true;
-    const useHelper = !!window.gvDesktop?.startSystemAudio;
-    try { await window.gvDesktop?.notifyAudioFallback?.({ useHelper }); } catch { /* 忽略 */ }
+  let audioNote = '';
+  let audioSourceLabel = '';
+
+  /** 用 helper 采集（pid>0=指定应用；0=整机），失败返回 null */
+  const helperTrack = async (pid) => {
+    if (!window.gvDesktop?.startSystemAudio) return null;
+    try {
+      const { startHelperSystemAudio } = await import('./system-audio.js');
+      const h = await startHelperSystemAudio({ pid });
+      return h?.track ? h : null;
+    } catch (e) {
+      console.warn('helper 音频采集失败：', e);
+      return null;
+    }
+  };
+  const attachHelper = (h) => {
+    stream.addTrack(h.track);
+    stream._helperStop = h.stop;
+  };
+
+  if (mode === 'app' || mode === 'follow') {
+    // 「按应用 / 跟随共享窗口」：视频照常选源（不带音频，避免采成整机），声音走 helper
     stream = await navigator.mediaDevices.getDisplayMedia({ ...constraints, audio: false });
-    if (useHelper) {
+    let pid = Number(audioSource?.pid) || 0;
+    let label = audioSource?.name || '';
+    if (mode === 'follow' && !pid) {
       try {
-        const { startHelperSystemAudio } = await import('./system-audio.js');
-        helperAudio = await startHelperSystemAudio();
-        if (helperAudio?.track) {
-          stream.addTrack(helperAudio.track);
-          stream._helperStop = helperAudio.stop;
-          audioFallback = false;   // 声音已拿到（兼容模式），不算降级
-          console.info('系统声音已通过兼容模式采集（helper 回环）', helperAudio.format);
+        const pick = await window.gvDesktop?.getLastDisplayPick?.();
+        if (pick && pick.fresh !== false && pick.type === 'window') {
+          pid = Number(pick.pid) || 0;
+          label = pick.name || '';
         }
-      } catch (e) {
-        console.warn('兼容模式系统声音失败，改为仅画面：', e);
-        helperAudio = null;
-        try { window.gvDesktop?.restoreWindowAudio?.(); } catch { /* 忽略 */ }
+      } catch { /* 忽略 */ }
+    }
+    if (pid > 0) {
+      const h = await helperTrack(pid);
+      if (h) { attachHelper(h); audioSourceLabel = label || '指定应用'; }
+      else if (mode === 'follow') {
+        // 窗口声音采不到 → 回退整机声音
+        const h2 = await helperTrack(0);
+        if (h2) { attachHelper(h2); audioSourceLabel = '整机声音（所选窗口无声音）'; }
+        else { audioFallback = true; audioNote = '系统声音采集失败：已自动改为「仅画面」共享'; }
+      } else {
+        audioFallback = true;
+        audioNote = `未能单独采集「${label || '所选应用'}」的声音（应用未在播放或系统不支持）：已改为「仅画面」共享`;
+      }
+    } else if (mode === 'follow') {
+      // 共享的是整个屏幕 → 整机声音（helper；与窗口无关）
+      const h = await helperTrack(0);
+      if (h) { attachHelper(h); audioSourceLabel = '整机声音'; }
+      else { audioFallback = true; audioNote = '系统声音采集失败：已自动改为「仅画面」共享'; }
+    } else {
+      audioFallback = true;
+      audioNote = '未选择要采集的应用：已改为「仅画面」共享（可在共享栏重新选择音频源）';
+    }
+  } else if (mode === 'system') {
+    // 整机声音：优先 Chromium 原生回环，失败走 helper 兼容采集，再失败仅画面
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia(constraints);
+    } catch (err) {
+      if (!withAudio || !isAudioStartError(err)) throw err;
+      console.warn('系统声音采集失败，尝试兼容模式：', err);
+      audioFallback = true;
+      const useHelper = !!window.gvDesktop?.startSystemAudio;
+      try { await window.gvDesktop?.notifyAudioFallback?.({ useHelper }); } catch { /* 忽略 */ }
+      stream = await navigator.mediaDevices.getDisplayMedia({ ...constraints, audio: false });
+      if (useHelper) {
+        const h = await helperTrack(0);
+        if (h) {
+          attachHelper(h);
+          audioFallback = false;   // 声音已拿到（兼容模式），不算降级
+          console.info('系统声音已通过兼容模式采集（helper 回环）');
+        } else {
+          try { window.gvDesktop?.restoreWindowAudio?.(); } catch { /* 忽略 */ }
+        }
       }
     }
+    if (!audioFallback) audioSourceLabel = '整机声音';
+  } else {
+    stream = await navigator.mediaDevices.getDisplayMedia(constraints);
   }
 
   const videoTrack = stream.getVideoTracks()[0];
@@ -99,9 +156,10 @@ export async function startScreenShare({ presetKey = DEFAULT_PRESET, withAudio =
       hasAudio: audioTracks.length > 0,
       displaySurface: settings.displaySurface || '',
       audioFallback,
-      audioNote: audioFallback
+      audioSourceLabel,
+      audioNote: audioNote || (audioFallback
         ? '系统声音采集失败（设备声卡驱动与系统音频回环不兼容）：已自动改为「仅画面」共享；更新声卡驱动后可重试'
-        : (withAudio && !audioTracks.length ? describeMissingAudio(settings) : ''),
+        : (withAudio && !audioTracks.length ? describeMissingAudio(settings) : '')),
     },
   };
 }

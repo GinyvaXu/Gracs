@@ -27,6 +27,7 @@ const state = {
     codecPreference: 'auto',
     uplinkMbps: 20,
     aspect: 'auto',
+    audioSource: { mode: 'system' },   // 音频源：system 整机 / follow 跟随共享窗口 / app 指定应用（桌面版）
   },
   socket: null,
   mesh: null,
@@ -197,6 +198,13 @@ function wireStaticUI() {
     saveSettings();
     if (!state.local) toast(state.linkMode === 'cinema' ? '下次共享将使用影院模式（画质更稳）' : '下次共享将使用标准链路（延迟更低）');
   });
+  // 音频源（桌面版：整机 / 跟随窗口 / 指定应用）
+  $('#btn-audio-source')?.addEventListener('click', openAudioSourceModal);
+  $('#share-audio')?.addEventListener('change', updateAudioSourceButton);
+  $('#btn-audio-refresh')?.addEventListener('click', refreshAudioAppList);
+  $('#btn-audio-ok')?.addEventListener('click', applyAudioSourceFromModal);
+  $('#btn-audio-cancel')?.addEventListener('click', () => closeModal('#modal-audio-source'));
+  updateAudioSourceButton();
   $('#btn-invite').addEventListener('click', openInviteModal);
   $('#btn-qr').addEventListener('click', openQrModal);
   $('#btn-network').addEventListener('click', () => openNetworkModal());
@@ -712,6 +720,112 @@ function onCinemaFeedback(id, stats) {
 }
 
 // ═══════════ 共享（发送端）═══════════
+
+// ── 音频源（桌面版：整机声音 / 跟随共享窗口 / 指定应用）──
+let pendingAppName = null;   // 音频源弹窗里选中的应用名（未点确定前暂存）
+
+function currentAudioSource() {
+  const s = state.settings.audioSource;
+  return s && s.mode ? s : { mode: 'system' };
+}
+
+function audioSourceLabel(src) {
+  const s = src || currentAudioSource();
+  if (s.mode === 'app') return s.name ? `🎯 ${s.name}` : '🎯 指定应用';
+  if (s.mode === 'follow') return '🪟 跟随窗口';
+  return '🔊 整机声音';
+}
+
+function updateAudioSourceButton() {
+  const btn = $('#btn-audio-source');
+  if (!btn) return;
+  const desktop = !!window.gvDesktop?.startSystemAudio;
+  const withAudio = !!$('#share-audio')?.checked;
+  btn.hidden = !desktop;   // 浏览器版无法按应用采声
+  if (!desktop) return;
+  btn.disabled = !withAudio;
+  btn.textContent = withAudio ? audioSourceLabel() : '🔇 未勾选声音';
+  btn.title = '选择共享的音频来源：整机声音 / 跟随共享窗口 / 指定应用（只播该应用，不影响语音软件）';
+}
+
+async function refreshAudioAppList() {
+  const box = $('#audio-app-list');
+  if (!box) return;
+  if (!window.gvDesktop?.listAudioSessions) {
+    box.innerHTML = '<p class="dim audio-app-empty">按应用采集仅桌面版支持</p>';
+    return;
+  }
+  box.innerHTML = '<p class="dim audio-app-empty">读取中…</p>';
+  let res = null;
+  try { res = await window.gvDesktop.listAudioSessions(); } catch { /* 忽略 */ }
+  if (!res?.ok) {
+    box.innerHTML = `<p class="dim audio-app-empty">读取失败：${res?.error || '未知错误'}</p>`;
+    return;
+  }
+  const sessions = (res.sessions || []).filter((s) => s.pid > 0);
+  if (!sessions.length) {
+    box.innerHTML = '<p class="dim audio-app-empty">当前没有正在发声的应用（先让应用播放声音，再点「刷新」）</p>';
+    return;
+  }
+  const cur = currentAudioSource();
+  box.innerHTML = '';
+  for (const s of sessions) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'audio-app-row' + (cur.mode === 'app' && cur.name === s.name ? ' active' : '');
+    row.textContent = s.name + (s.muted ? '（已静音）' : '');
+    row.dataset.name = s.name;
+    row.addEventListener('click', () => {
+      pendingAppName = s.name;
+      const radio = document.querySelector('input[name="audio-source-mode"][value="app"]');
+      if (radio) radio.checked = true;
+      for (const el of box.querySelectorAll('.audio-app-row')) el.classList.toggle('active', el === row);
+    });
+    box.append(row);
+  }
+}
+
+async function openAudioSourceModal() {
+  const modal = $('#modal-audio-source');
+  if (!modal) return;
+  const cur = currentAudioSource();
+  pendingAppName = cur.mode === 'app' ? (cur.name || null) : null;
+  const radio = document.querySelector(`input[name="audio-source-mode"][value="${cur.mode === 'app' ? 'app' : cur.mode}"]`);
+  if (radio) radio.checked = true;
+  openModal('#modal-audio-source');
+  await refreshAudioAppList();
+}
+
+function applyAudioSourceFromModal() {
+  const checked = document.querySelector('input[name="audio-source-mode"]:checked');
+  const mode = checked?.value === 'app' ? 'app' : checked?.value === 'follow' ? 'follow' : 'system';
+  if (mode === 'app') {
+    if (!pendingAppName) {
+      return toast('请先在下方列表里选择一个应用（需正在发声）', { kind: 'error', ms: 5000 });
+    }
+    state.settings.audioSource = { mode: 'app', name: pendingAppName };
+  } else {
+    state.settings.audioSource = { mode };
+  }
+  saveSettings();
+  updateAudioSourceButton();
+  closeModal('#modal-audio-source');
+}
+
+/** 共享前解析音频源：app 模式把「应用名」解析为当前 PID（应用可能重启过） */
+async function resolveAudioSource() {
+  const src = currentAudioSource();
+  if (src.mode !== 'app') return src;
+  if (!window.gvDesktop?.listAudioSessions) return { mode: 'system' };
+  try {
+    const res = await window.gvDesktop.listAudioSessions();
+    const hit = res?.ok ? (res.sessions || []).find((s) => s.name === src.name && s.pid > 0) : null;
+    if (hit) return { mode: 'app', name: src.name, pid: hit.pid };
+    toast(`「${src.name}」当前没有在发声，已改用整机声音`, { kind: 'error', ms: 6000 });
+  } catch { /* 忽略 */ }
+  return { mode: 'system' };
+}
+
 async function toggleShare() {
   if (state.local) return stopShare();
   if (state.sharePending) return;
@@ -728,9 +842,10 @@ async function toggleShare() {
   }, 60_000);
 
   const withAudio = $('#share-audio').checked;
+  const audioSource = withAudio ? await resolveAudioSource() : null;
   let captured;
   try {
-    captured = await startScreenShare({ presetKey: state.preset, withAudio });
+    captured = await startScreenShare({ presetKey: state.preset, withAudio, audioSource });
   } catch (err) {
     state.sharePending = false;
     clearTimeout(state.sharePendingTimer);
@@ -827,7 +942,9 @@ function shareStatusText() {
   const presetLabel = PRESETS[state.local.preset]?.label || '';
   const modeLabel = state.local.mode === 'cinema' ? '影院模式' : '标准链路';
   const size = state.local.meta.width && state.local.meta.height ? `${state.local.meta.width}×${state.local.meta.height}` : '';
-  const audio = state.local.meta.hasAudio ? ' · 🔊 系统声音' : ' · 🔇 无系统声音';
+  const audio = state.local.meta.hasAudio
+    ? ` · 🔊 ${state.local.meta.audioSourceLabel || '系统声音'}`
+    : ' · 🔇 无系统声音';
   return `正在共享 · ${modeLabel} · ${presetLabel}${size ? ' · ' + size : ''}${audio}`;
 }
 

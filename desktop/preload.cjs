@@ -21,8 +21,13 @@ contextBridge.exposeInMainWorld('gvDesktop', {
   // opts.useHelper=true 时渲染进程会用 helper 兼容采集系统声音（主进程保留窗口声音隔离）
   notifyAudioFallback: (opts) => ipcRenderer.invoke('gv:audio-fallback', opts || {}),
   // 兼容模式系统声音：helper 采集回环 PCM → 渲染进程合成 MediaStreamTrack
-  startSystemAudio: () => ipcRenderer.invoke('gv:system-audio-start'),
+  // opts.pid > 0 时只采集该进程及其子进程的声音（按应用采声，避开语音软件回音）
+  startSystemAudio: (opts) => ipcRenderer.invoke('gv:system-audio-start', opts || {}),
   stopSystemAudio: () => ipcRenderer.send('gv:system-audio-stop'),
+  // 当前发声的应用列表（音频源选择器用）
+  listAudioSessions: () => ipcRenderer.invoke('gv:audio-sessions'),
+  // 最近一次屏幕/窗口选择（含窗口 PID；「跟随共享窗口」音频源用）
+  getLastDisplayPick: () => ipcRenderer.invoke('gv:last-display-pick'),
   onSystemAudioFormat: (cb) => { const h = (_e, f) => cb(f); ipcRenderer.on('gv:system-audio-format', h); return () => ipcRenderer.removeListener('gv:system-audio-format', h); },
   onSystemAudioChunk: (cb) => { const h = (_e, b) => cb(b); ipcRenderer.on('gv:system-audio-chunk', h); return () => ipcRenderer.removeListener('gv:system-audio-chunk', h); },
   onSystemAudioEnd: (cb) => { const h = () => cb(); ipcRenderer.on('gv:system-audio-end', h); return () => ipcRenderer.removeListener('gv:system-audio-end', h); },

@@ -54,11 +54,12 @@ public static class Program {
 
         // ════════════ audio 子命令（基于 NAudio.CoreAudioApi，稳定可靠） ════════════
 
-    // audio capture：把系统声音（WASAPI 回环）以裸 PCM 写到 stdout（兼容模式：
-    // Chromium/Electron 自带回环在部分声卡驱动上不可用时使用）。
-    // 输出：首行 "#PCM <rate> <channels> 16"，随后为 s16le 交错采样（立体声）。
-    // 结束：父进程关闭 stdin 管道或终止本进程。
-    static int AudioCapture() {
+    // audio capture [--pid N]：把声音以裸 PCM 写到 stdout。
+    //   --pid N：只采集该进程及其子进程的声音（Windows 进程回环，Win10 2004+/11；用于避开语音软件回音）
+    //   无 --pid：采集整个系统混音（WASAPI 回环）
+    // 输出：首行 "#PCM <rate> <channels> 16"，随后为 s16le 交错采样（立体声）。结束：父进程终止本进程。
+    static int AudioCapture(uint pid) {
+        if (pid > 0) return AudioCaptureProcess(pid);
         try {
             var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
             var device = enumerator.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.Role.Multimedia);
@@ -124,6 +125,228 @@ public static class Program {
         return (short)Math.Round(v * 32767.0);
     }
 
+    // ════════════ 进程回环采集（只采指定应用的声音）════════════
+    // Windows 10 2004+/11 的 AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK：
+    // 只采集目标进程及其子进程的音频（OBS「应用音频采集」同款），其它应用（语音软件）不受影响。
+    const int AUDCLNT_SHAREMODE_SHARED = 0;
+    const int AUDCLNT_STREAMFLAGS_LOOPBACK = 0x00020000;
+    const int AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY = 0x08000000;
+    const int AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM = unchecked((int)0x80000000);
+    const int AUDCLNT_BUFFERFLAGS_SILENT = 0x00000002;
+    const int AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK = 1;
+    const int PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE = 0;
+    const int VT_BLOB = 65;
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS {
+        public uint TargetProcessId;
+        public int ProcessLoopbackMode;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct AUDIOCLIENT_ACTIVATION_PARAMS {
+        public int ActivationType;
+        public AUDIOCLIENT_PROCESS_LOOPBACK_PARAMS ProcessLoopbackParams;
+    }
+
+    [ComImport, Guid("41D949AB-9862-444A-80F6-C261334DA5EB"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IActivateAudioInterfaceCompletionHandler {
+        void ActivateCompleted(IActivateAudioInterfaceAsyncOperation activateOperation);
+    }
+
+    [ComImport, Guid("72A22D78-CDE4-431D-B8CC-843A71199B6D"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IActivateAudioInterfaceAsyncOperation {
+        void GetActivateResult(out int activateResult, [MarshalAs(UnmanagedType.IUnknown)] out object activatedInterface);
+    }
+
+    // 敏捷对象标记：Windows 从 MTA 工作线程回调完成处理器，未实现该接口会得到 E_ILLEGAL_METHOD_CALL
+    [ComImport, Guid("94EA2B94-E9CC-49E0-C0FF-EE64CA8F5B90"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IAgileObject {
+    }
+
+    [ComImport, Guid("1CB9AD4C-DBFA-4C32-B178-C2F568A703B2"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IRawAudioClient {
+        [PreserveSig] int Initialize(int shareMode, int streamFlags, long bufferDuration, long periodicity, IntPtr format, IntPtr sessionGuid);
+        [PreserveSig] int GetBufferSize(out uint frames);
+        [PreserveSig] int GetStreamLatency(out long latency);
+        [PreserveSig] int GetCurrentPadding(out uint padding);
+        [PreserveSig] int IsFormatSupported(int shareMode, IntPtr format, out IntPtr closest);
+        [PreserveSig] int GetMixFormat(out IntPtr format);
+        [PreserveSig] int GetDevicePeriod(out long defaultPeriod, out long minimumPeriod);
+        [PreserveSig] int Start();
+        [PreserveSig] int Stop();
+        [PreserveSig] int Reset();
+        [PreserveSig] int SetEventHandle(IntPtr handle);
+        [PreserveSig] int GetService(ref Guid iid, [MarshalAs(UnmanagedType.IUnknown)] out object service);
+    }
+
+    [ComImport, Guid("C8ADBD64-E71E-48A0-A4DE-185C395CD317"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IRawAudioCaptureClient {
+        [PreserveSig] int GetBuffer(out IntPtr data, out uint frames, out uint flags, IntPtr devicePosition, IntPtr qpcPosition);
+        [PreserveSig] int ReleaseBuffer(uint frames);
+        [PreserveSig] int GetNextPacketSize(out uint frames);
+    }
+
+    [DllImport("Mmdevapi.dll", ExactSpelling = true)]
+    static extern int ActivateAudioInterfaceAsync(
+        [MarshalAs(UnmanagedType.LPWStr)] string deviceInterfacePath,
+        ref Guid riid,
+        IntPtr activationParams,
+        IActivateAudioInterfaceCompletionHandler completionHandler,
+        out IActivateAudioInterfaceAsyncOperation operation);
+
+    [ComVisible(true)]
+    class ActivationHandler : IActivateAudioInterfaceCompletionHandler, IAgileObject {
+        public readonly ManualResetEvent Done = new ManualResetEvent(false);
+        public int Hr = -1;
+        public object Client;
+        public void ActivateCompleted(IActivateAudioInterfaceAsyncOperation op) {
+            object obj = null;
+            int hr = -1;
+            try { op.GetActivateResult(out hr, out obj); } catch (Exception ex) { DebugLog("GetActivateResult 异常: " + SafeName(ex.Message)); }
+            Hr = hr;
+            Client = obj;
+            Done.Set();
+        }
+    }
+
+    static IRawAudioClient ActivateProcessLoopbackClient(uint pid) {
+        var activation = new AUDIOCLIENT_ACTIVATION_PARAMS();
+        activation.ActivationType = AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK;
+        activation.ProcessLoopbackParams.TargetProcessId = pid;
+        activation.ProcessLoopbackParams.ProcessLoopbackMode = PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE;
+
+        int structSize = Marshal.SizeOf(typeof(AUDIOCLIENT_ACTIVATION_PARAMS));
+        IntPtr blobPtr = Marshal.AllocCoTaskMem(structSize);
+        int pvSize = IntPtr.Size == 8 ? 24 : 16;
+        IntPtr pvPtr = Marshal.AllocCoTaskMem(pvSize);
+        var handler = new ActivationHandler();
+        try {
+            Marshal.StructureToPtr(activation, blobPtr, false);
+            for (int i = 0; i < pvSize; i++) Marshal.WriteByte(pvPtr, i, 0);
+            Marshal.WriteInt16(pvPtr, 0, VT_BLOB);
+            Marshal.WriteInt32(pvPtr, 8, structSize);
+            Marshal.WriteIntPtr(pvPtr, IntPtr.Size == 8 ? 16 : 12, blobPtr);
+
+            Guid iid = new Guid("1CB9AD4C-DBFA-4C32-B178-C2F568A703B2");
+            IActivateAudioInterfaceAsyncOperation op;
+            // 进程回环使用虚拟设备路径 VAD\Process_Loopback（普通回环才用物理设备 ID）
+            int hr = ActivateAudioInterfaceAsync(@"VAD\Process_Loopback", ref iid, pvPtr, handler, out op);
+            if (hr != 0) { DebugLog("ActivateAudioInterfaceAsync hr=0x" + hr.ToString("X8")); return null; }
+            if (!handler.Done.WaitOne(5000)) { DebugLog("进程回环激活超时"); return null; }
+            if (handler.Hr != 0) { DebugLog("进程回环激活结果 hr=0x" + handler.Hr.ToString("X8")); return null; }
+            return handler.Client as IRawAudioClient;
+        } catch (Exception ex) {
+            DebugLog("进程回环激活异常: " + SafeName(ex.Message));
+            return null;
+        } finally {
+            Marshal.FreeCoTaskMem(blobPtr);
+            Marshal.FreeCoTaskMem(pvPtr);
+        }
+    }
+
+    static int AudioCaptureProcess(uint pid) {
+        try {
+            var client = ActivateProcessLoopbackClient(pid);
+            if (client == null) {
+                Console.WriteLine("ERR: 无法单独采集该应用（需要 Windows 10 2004+/11，或应用不再发声）");
+                return 1;
+            }
+            // 进程回环不绑定物理设备，GetMixFormat 不可用（E_NOTIMPL）：
+            // 自备 16bit 48kHz 立体声 PCM + AUTOCONVERTPCM 让音频引擎自动转换（与官方样例一致）
+            const int rate = 48000;
+            const int channels = 2;
+            const int bits = 16;
+            int blockAlign = channels * bits / 8;
+            IntPtr fmtPtr = Marshal.AllocCoTaskMem(18);
+            try {
+                for (int i = 0; i < 18; i++) Marshal.WriteByte(fmtPtr, i, 0);
+                Marshal.WriteInt16(fmtPtr, 0, (short)1);                // WAVE_FORMAT_PCM
+                Marshal.WriteInt16(fmtPtr, 2, (short)channels);
+                Marshal.WriteInt32(fmtPtr, 4, rate);
+                Marshal.WriteInt32(fmtPtr, 8, rate * blockAlign);
+                Marshal.WriteInt16(fmtPtr, 12, (short)blockAlign);
+                Marshal.WriteInt16(fmtPtr, 14, (short)bits);
+
+                int flags = AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+                int hr = client.Initialize(AUDCLNT_SHAREMODE_SHARED, flags, 0, 0, fmtPtr, IntPtr.Zero);
+                if (hr != 0) { Console.WriteLine("ERR: 初始化进程回环失败 (0x" + hr.ToString("X8") + ")"); return 1; }
+                Guid capIid = new Guid("C8ADBD64-E71E-48A0-A4DE-185C395CD317");
+                object capObj;
+                hr = client.GetService(ref capIid, out capObj);
+                if (hr != 0 || capObj == null) { Console.WriteLine("ERR: 获取采集接口失败 (0x" + hr.ToString("X8") + ")"); return 1; }
+                var capture = (IRawAudioCaptureClient)capObj;
+                hr = client.Start();
+                if (hr != 0) { Console.WriteLine("ERR: 启动采集失败 (0x" + hr.ToString("X8") + ")"); return 1; }
+
+                var outStream = Console.OpenStandardOutput();
+                var header = Encoding.ASCII.GetBytes(string.Format(CultureInfo.InvariantCulture,
+                    "#PCM {0} {1} 16\n", rate, channels));
+                outStream.Write(header, 0, header.Length);
+                outStream.Flush();
+
+                int bps = bits / 8;
+                int frameSize = blockAlign;
+                while (true) {
+                    uint packet;
+                    hr = capture.GetNextPacketSize(out packet);
+                    if (hr != 0) break;
+                    while (packet > 0) {
+                        IntPtr data;
+                        uint frames;
+                        uint flags2;
+                        hr = capture.GetBuffer(out data, out frames, out flags2, IntPtr.Zero, IntPtr.Zero);
+                        if (hr != 0) break;
+                        if (frames > 0 && data != IntPtr.Zero && (flags2 & AUDCLNT_BUFFERFLAGS_SILENT) == 0) {
+                            int bytes = (int)frames * frameSize;
+                            var src = new byte[bytes];
+                            Marshal.Copy(data, src, 0, bytes);
+                            WritePcm16(outStream, src, (int)frames, frameSize, bps, channels, false);
+                        }
+                        capture.ReleaseBuffer(frames);
+                        hr = capture.GetNextPacketSize(out packet);
+                    }
+                    Thread.Sleep(10);
+                }
+                return 0;
+            } finally {
+                Marshal.FreeCoTaskMem(fmtPtr);
+            }
+        } catch (Exception ex) {
+            Console.WriteLine("ERR: " + SafeName(ex.Message));
+            return 1;
+        }
+    }
+
+    static void WritePcm16(System.IO.Stream outStream, byte[] src, int frames, int frameSize, int bps, int channels, bool isFloat) {
+        var outBuf = new byte[frames * 4];
+        int o = 0;
+        for (int i = 0; i < frames; i++) {
+            int off = i * frameSize;
+            double l, r;
+            if (channels == 1) { l = ReadSampleRaw(src, off, bps, isFloat); r = l; }
+            else {
+                l = ReadSampleRaw(src, off, bps, isFloat);
+                r = ReadSampleRaw(src, off + bps, bps, isFloat);
+            }
+            short sl = ToPcm16(l), sr = ToPcm16(r);
+            outBuf[o++] = (byte)(sl & 0xFF);
+            outBuf[o++] = (byte)((sl >> 8) & 0xFF);
+            outBuf[o++] = (byte)(sr & 0xFF);
+            outBuf[o++] = (byte)((sr >> 8) & 0xFF);
+        }
+        outStream.Write(outBuf, 0, o);
+        outStream.Flush();
+    }
+
+    static double ReadSampleRaw(byte[] buf, int offset, int bps, bool isFloat) {
+        if (isFloat) return bps == 4 ? BitConverter.ToSingle(buf, offset) : 0;
+        if (bps == 2) return BitConverter.ToInt16(buf, offset) / 32768.0;
+        if (bps == 3) return (buf[offset] | (buf[offset + 1] << 8) | ((sbyte)buf[offset + 2] << 16)) / 8388608.0;
+        if (bps == 4) return BitConverter.ToInt32(buf, offset) / 2147483648.0;
+        return 0;
+    }
+
     class SessionInfo {
         public uint Pid;
         public string Name;
@@ -178,14 +401,19 @@ public static class Program {
         return n.Replace("\t", " ").Replace("\r", " ").Replace("\n", " ");
     }
 
-    // audio list
+    // audio list（UTF-8 输出：应用名可能是中文，避免控制台代码页乱码）
     static int AudioList() {
         string dev;
         var sessions = EnumerateSessions(out dev);
-        Console.WriteLine("device=" + dev + " sessions=" + sessions.Count);
+        var sb = new StringBuilder();
+        sb.Append("device=").Append(dev).Append(" sessions=").Append(sessions.Count).Append("\n");
         foreach (var s in sessions) {
-            Console.WriteLine(string.Format(CultureInfo.InvariantCulture, "{0}\t{1}\tmuted={2}", s.Pid, SafeName(s.Name), s.Muted ? 1 : 0));
+            sb.Append(s.Pid).Append('\t').Append(SafeName(s.Name)).Append("\tmuted=").Append(s.Muted ? "1" : "0").Append('\n');
         }
+        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+        var stdout = Console.OpenStandardOutput();
+        stdout.Write(bytes, 0, bytes.Length);
+        stdout.Flush();
         return 0;
     }
 
@@ -274,7 +502,15 @@ public static class Program {
         if (args.Length >= 2 && args[1].Equals("list", StringComparison.OrdinalIgnoreCase)) return AudioList();
         if (args.Length >= 4 && args[1].Equals("mute-others", StringComparison.OrdinalIgnoreCase)) return AudioMuteOthers(args);
         if (args.Length >= 3 && args[1].Equals("restore", StringComparison.OrdinalIgnoreCase)) return AudioRestore(args);
-        if (args.Length >= 2 && args[1].Equals("capture", StringComparison.OrdinalIgnoreCase)) return AudioCapture();
+        if (args.Length >= 2 && args[1].Equals("capture", StringComparison.OrdinalIgnoreCase)) {
+            uint pid = 0;
+            for (int i = 2; i < args.Length - 1; i++) {
+                if (args[i].Equals("--pid", StringComparison.OrdinalIgnoreCase)) {
+                    uint.TryParse(args[i + 1], out pid);
+                }
+            }
+            return AudioCapture(pid);
+        }
         Console.WriteLine("ERR: 未知 audio 子命令");
         return 1;
     }
