@@ -210,12 +210,44 @@ export async function startGracsServer(opts = {}) {
     }
   }
 
+  // ── 安全：信令连接 Origin 校验 ──
+  // 浏览器允许任意网页向 localhost / 局域网发起 WebSocket；若不校验，恶意网站可加入房间偷看共享画面。
+  // 放行：无 Origin（原生客户端）、localhost、本机各网卡地址（含 Radmin 等虚拟网卡）、私网 / 链路本地地址；
+  // 内网穿透域名等其它来源需 GRACS_ALLOWED_ORIGINS=host1,host2 显式放行；GRACS_ALLOW_ANY_ORIGIN=1 可关闭校验。
+  const allowAnyOrigin = process.env.GRACS_ALLOW_ANY_ORIGIN === '1';
+  const extraOrigins = new Set(String(process.env.GRACS_ALLOWED_ORIGINS || '')
+    .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean));
+  function originAllowed(origin) {
+    if (!origin) return true;
+    if (allowAnyOrigin) return true;
+    try {
+      const u = new URL(origin);
+      const h = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+      const local = new Set([
+        'localhost', '127.0.0.1', '::1',
+        ...lanIPv4List().map((s) => s.toLowerCase()),
+        ...globalIPv6List().map((s) => s.toLowerCase()),
+      ]);
+      if (local.has(h)) return true;
+      if (extraOrigins.has(h) || extraOrigins.has(u.host.toLowerCase())) return true;
+      if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h)) return true;   // RFC1918
+      if (/^(169\.254\.|fe80:|f[cd])/i.test(h)) return true;                       // 链路本地 / ULA
+      return false;
+    } catch { return false; }
+  }
+
   const io = new Server({
     serveClient: true,
     cors: { origin: true },
     maxHttpBufferSize: 2_000_000,       // 影院模式码流批次上限
     pingInterval: 20_000,
     pingTimeout: 15_000,
+    allowRequest: (req, callback) => {
+      const origin = req.headers?.origin;
+      if (originAllowed(origin)) return callback(null, true);
+      logger.work(`[security] 拒绝来源未授权的信令连接：${origin}（如为内网穿透域名，可设 GRACS_ALLOWED_ORIGINS 放行）`);
+      callback('origin blocked', false);
+    },
   });
   io.attach(server);
   if (httpsServer) io.attach(httpsServer);

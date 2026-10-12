@@ -487,6 +487,66 @@ button, select, input, .tile { touch-action: manipulation; }
   .lobby-card { padding: 20px 16px; }
   .toast-box { bottom: calc(88px + var(--safe-bottom)); }
 }
+
+/* ═══════════ 启动加载动画（boot 完成后淡出）═══════════ */
+#boot-loader {
+  position: fixed; inset: 0; z-index: 900;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  background:
+    radial-gradient(1200px 620px at 50% -10%, rgba(77, 212, 200, 0.09), transparent 60%),
+    radial-gradient(900px 500px at 50% 110%, rgba(139, 124, 246, 0.08), transparent 60%),
+    #0b0d14;
+  transition: opacity 0.4s ease;
+}
+#boot-loader.hide { opacity: 0; pointer-events: none; }
+.boot-mark { position: relative; width: 84px; height: 84px; display: grid; place-items: center; }
+.boot-screen { font-size: 40px; filter: drop-shadow(0 0 14px rgba(77, 212, 200, 0.45)); animation: boot-breathe 1.8s ease-in-out infinite; }
+.boot-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid transparent; border-top-color: var(--accent);
+  animation: boot-spin 1s linear infinite;
+}
+.boot-ring::after {
+  content: ''; position: absolute; inset: 6px; border-radius: 50%;
+  border: 2px solid transparent; border-bottom-color: rgba(139, 124, 246, 0.85);
+  animation: boot-spin 1.6s linear infinite reverse;
+}
+.boot-title { font-size: 22px; font-weight: 700; letter-spacing: 0.5px; margin-top: 4px; }
+.boot-sub { font-size: 12px; color: var(--dim); }
+.boot-dots { display: inline-flex; gap: 6px; margin-top: 2px; }
+.boot-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: 0.35; animation: boot-dot 1.2s ease-in-out infinite; }
+.boot-dots i:nth-child(2) { animation-delay: 0.15s; }
+.boot-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes boot-spin { to { transform: rotate(360deg); } }
+@keyframes boot-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@keyframes boot-dot { 0%, 100% { opacity: 0.3; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-3px); } }
+
+/* ═══════════ 全流程视觉与交互细节 ═══════════ */
+/* 屏间过渡：进入页 / 房间切换时轻微上浮淡入（display 变化会重放动画） */
+.screen { animation: screen-in 0.26s ease both; }
+@keyframes screen-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+/* 弹窗卡片弹出 */
+.modal.open .modal-card { animation: modal-pop 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.18) both; }
+@keyframes modal-pop { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: none; } }
+/* 按钮按压 / 悬停手感 */
+.btn { transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease, filter 0.15s ease; }
+.btn:active { transform: translateY(1px) scale(0.99); }
+/* 成员列表 / 瓦片细节 */
+.member-item { transition: background 0.15s ease, transform 0.12s ease; }
+.member-item:hover { transform: translateX(1px); }
+.tile { transition: box-shadow 0.18s ease, border-color 0.18s ease; }
+.tile:hover { border-color: var(--border-strong); }
+/* 输入聚焦光晕 */
+input:focus-visible, select:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(77, 212, 200, 0.15); }
+
+/* 无障碍：尊重系统「减少动态效果」 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
 @media (max-width: 560px) {
   .stage-strip .tile { width: 128px; height: 72px; }
   .tile-volume input { width: 56px; }

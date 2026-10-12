@@ -111,7 +111,17 @@ async function boot() {
   if (urlParam('autojoin') === '1' && nick) {
     setTimeout(() => enterRoom(), 150);
   }
+  bootDone();
 }
+
+/** 隐藏启动加载动画（boot 成功/失败都会调用；另有 8s 兜底） */
+function bootDone() {
+  const el = document.getElementById('boot-loader');
+  if (!el || el.classList.contains('hide')) return;
+  el.classList.add('hide');
+  setTimeout(() => { try { el.remove(); } catch { /* 忽略 */ } }, 450);
+}
+setTimeout(bootDone, 8000);   // 兜底：极端情况下也不让加载动画永久遮挡
 
 function loadSettings() {
   const saved = storage.get('settings', {});

@@ -36,6 +36,26 @@ const MIRROR_PREFIXES = [
   'https://gh.llkk.cc/',
   'https://gh-proxy.com/',
 ];
+// 安装包下载地址白名单：update.json 被篡改时，避免下载任意来源的可执行文件
+const TRUSTED_DOWNLOAD_HOSTS = new Set([
+  'github.com',
+  'objects.githubusercontent.com',
+  'github-releases.githubusercontent.com',
+  'release-assets.githubusercontent.com',
+  'dl.ginyva.site',
+  'ghfast.top',
+  'ghproxy.net',
+  'gh.llkk.cc',
+  'gh-proxy.com',
+]);
+function isTrustedDownloadUrl(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && TRUSTED_DOWNLOAD_HOSTS.has(u.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
 const markerFile = () => join(app.getPath('userData'), 'update-marker.json');
 
 // ---------- 版本比较 ----------
@@ -139,6 +159,9 @@ async function downloadOne(url, destPath, onProgress, timeout = DOWNLOAD_TIMEOUT
 
 // 多源下载：官方 URL 优先，失败依次换国内代理镜像，每个源最多 2 次
 export async function downloadInstaller(url, destPath, onProgress) {
+  if (!isTrustedDownloadUrl(url)) {
+    throw new Error('更新下载地址不受信任，已阻止：' + String(url || '').slice(0, 120));
+  }
   const sources = [url, ...MIRROR_PREFIXES.map((m) => m + url)];
   let lastErr = null;
   for (let i = 0; i < sources.length; i++) {

@@ -14,6 +14,16 @@
   <link rel="stylesheet" href="/css/style.css?v=__VERSION__" />
 </head>
 <body>
+  <!-- 启动加载动画：boot 完成后淡出（网页版 / 桌面版共用）-->
+  <div id="boot-loader" aria-hidden="true">
+    <div class="boot-mark">
+      <span class="boot-screen">🖥️</span>
+      <span class="boot-ring"></span>
+    </div>
+    <div class="boot-title">Gracs</div>
+    <div class="boot-sub">一起看屏幕 · 正在连接…</div>
+    <div class="boot-dots"><i></i><i></i><i></i></div>
+  </div>
   <div id="app">
     <!-- ═══════════ 进入页 ═══════════ -->
     <section id="screen-lobby" class="screen lobby">

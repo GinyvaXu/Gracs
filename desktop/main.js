@@ -179,6 +179,12 @@ async function bootstrap() {
   // 语音/共享音频播放需要 WebAudio，桌面版放开自动播放限制
   app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
+  // 启动画面：尽早出现（服务启动 + 页面加载期间不再黑屏等待），主窗口就绪后淡出
+  await app.whenReady();
+  app.setAppUserModelId('com.gracs.app');
+  createSplash();
+  app.on('before-quit', () => closeSplash());
+
   // 始终启动本地服务器：本机开服时它是房间服务器；远程模式下作为「恢复页」兜底（失败时跳回本地设置页）
   try {
     serverHandle = await startGracsServer({
@@ -199,6 +205,7 @@ async function bootstrap() {
     });
   } catch (err) {
     logger.error('服务器启动失败:', err);
+    closeSplash();
     dialog.showErrorBox('Gracs', '服务器启动失败（端口可能被占用），请查看日志：\n' + (err?.message || String(err)));
     app.quit();
     return;
@@ -219,10 +226,6 @@ async function bootstrap() {
   }
 
   openDebugConsole(logDir);
-
-  app.setAppUserModelId('com.gracs.app');
-
-  await app.whenReady();
 
   // 权限：屏幕采集 / 系统声音 自动放行（本软件只加载自家页面）
   // 注意：session 必须在 app ready 之后使用
@@ -553,8 +556,63 @@ while ($true) {
   } catch { /* 控制台打不开不阻塞主程序 */ }
 }
 
-function createWindow() {
-  const iconPath = join(__dirname, '..', 'assets', 'tray.png');
+// ── 启动画面：品牌加载动画（服务启动/页面加载期间显示，主窗口就绪后淡出）──
+let splashWindow = null;
+const SPLASH_HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+  html,body{margin:0;height:100%;background:#0b0d14;overflow:hidden}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    font-family:"Segoe UI","Microsoft YaHei",sans-serif;color:#e8ecf8;
+    background:radial-gradient(600px 320px at 50% -10%,rgba(77,212,200,.1),transparent 60%),#0b0d14}
+  .mark{position:relative;width:84px;height:84px;display:grid;place-items:center}
+  .scr{font-size:40px;filter:drop-shadow(0 0 14px rgba(77,212,200,.45));animation:breathe 1.8s ease-in-out infinite}
+  .ring{position:absolute;inset:0;border-radius:50%;border:2px solid transparent;border-top-color:#4dd4c8;animation:spin 1s linear infinite}
+  .ring::after{content:"";position:absolute;inset:6px;border-radius:50%;border:2px solid transparent;border-bottom-color:rgba(139,124,246,.85);animation:spin 1.6s linear infinite reverse}
+  .title{font-size:22px;font-weight:700;letter-spacing:.5px}
+  .sub{font-size:12px;color:#97a0b8}
+  .dots{display:flex;gap:6px}
+  .dots i{width:6px;height:6px;border-radius:50%;background:#4dd4c8;opacity:.35;animation:dot 1.2s ease-in-out infinite}
+  .dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+  @keyframes dot{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+</style></head><body>
+  <div class="mark"><span class="scr">🖥️</span><span class="ring"></span></div>
+  <div class="title">Gracs</div>
+  <div class="sub">一起看屏幕 · 正在启动本机服务…</div>
+  <div class="dots"><i></i><i></i><i></i></div>
+</body></html>`;
+
+function createSplash() {
+  try {
+    splashWindow = new BrowserWindow({
+      width: 420, height: 240,
+      frame: false, resizable: false, movable: true, show: false,
+      alwaysOnTop: true, skipTaskbar: true, fullscreenable: false,
+      backgroundColor: '#0b0d14',
+      icon: join(__dirname, '..', 'assets', 'tray.png'),
+      webPreferences: { sandbox: true, contextIsolation: true },
+    });
+    splashWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(SPLASH_HTML));
+    splashWindow.once('ready-to-show', () => { try { splashWindow?.show(); } catch { /* 忽略 */ } });
+    splashWindow.on('closed', () => { splashWindow = null; });
+  } catch { splashWindow = null; }
+}
+
+function closeSplash() {
+  const w = splashWindow;
+  splashWindow = null;
+  if (!w) return;
+  try {
+    let opacity = 1;
+    const timer = setInterval(() => {
+      opacity -= 0.14;
+      if (opacity <= 0) { clearInterval(timer); try { w.destroy(); } catch { /* 忽略 */ } return; }
+      try { w.setOpacity(opacity); } catch { clearInterval(timer); try { w.destroy(); } catch { /* 忽略 */ } }
+    }, 24);
+  } catch { try { w.destroy(); } catch { /* 忽略 */ } }
+}
+
+function createWindow() {  const iconPath = join(__dirname, '..', 'assets', 'tray.png');
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -564,6 +622,7 @@ function createWindow() {
     icon: iconPath,
     backgroundColor: '#14151a',
     autoHideMenuBar: true,
+    show: false,   // 等 ready-to-show 再显示，避免白屏闪烁（启动画面淡出衔接）
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -571,6 +630,35 @@ function createWindow() {
     },
   });
   mainWindow.loadURL(appUrl);
+  // 安全：外部链接一律交给系统浏览器；主窗口不允许导航离开应用页面
+  // （preload 桥暴露了设置/更新等能力，页面被导航到第三方站点会带来风险）
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) { try { shell.openExternal(url); } catch { /* 忽略 */ } }
+    return { action: 'deny' };
+  });
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    try {
+      const target = new URL(url);
+      const current = new URL(appUrl);
+      const sameServer = target.host === current.host || (!!remoteOrigin && url.startsWith(remoteOrigin));
+      if (sameServer || target.protocol === 'file:') return;
+      e.preventDefault();
+      if (/^https?:/i.test(url)) { try { shell.openExternal(url); } catch { /* 忽略 */ } }
+    } catch {
+      e.preventDefault();
+    }
+  });
+  // 主窗口就绪 → 显示并淡出启动画面；远程模式加载慢/失败时 12s 兜底（恢复页接管）
+  mainWindow.once('ready-to-show', () => {
+    try { mainWindow.show(); } catch { /* 忽略 */ }
+    closeSplash();
+  });
+  setTimeout(() => {
+    if (splashWindow) closeSplash();
+    try {
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();
+    } catch { /* 忽略 */ }
+  }, 12_000);
   mainWindow.webContents.on('render-process-gone', (_e, details) =>
     writeCrashReport('renderer-gone', new Error(JSON.stringify(details)))
   );

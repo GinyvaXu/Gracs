@@ -48,7 +48,7 @@ export class RoomManager {
     if (room.users.size >= MAX_USERS_PER_ROOM) return { error: `房间已满（最多 ${MAX_USERS_PER_ROOM} 人）` };
     const user = {
       id: socketId,
-      username: String(username || '观众').slice(0, 16) || '观众',
+      username: String(username || '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 16) || '观众',
       share: null,
       joinedAt: Date.now(),
     };
