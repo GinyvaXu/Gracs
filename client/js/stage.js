@@ -2,14 +2,26 @@
 import { el, $, clamp, storage, toast } from './core.js';
 
 export class Stage {
-  constructor({ mainEl, stripEl, onFocus, onAction }) {
+  constructor({ mainEl, stripEl, onFocus, onAction, onFullscreenChange }) {
     this.mainEl = mainEl;
     this.stripEl = stripEl;
     this.onFocus = onFocus;
     this.onAction = onAction;
+    this.onFullscreenChange = onFullscreenChange;
     this.tiles = new Map();   // id -> { root, media, audio, badge, kind, view }
     this.focused = null;
     this.aspect = storage.get('aspect', 'auto');
+    this._bindMediaStateEvents();
+  }
+
+  /** 监听原生全屏/画中画的进出，保证按钮与状态始终同步 */
+  _bindMediaStateEvents() {
+    this._onFsChange = () => this._syncFullscreenUi();
+    document.addEventListener('fullscreenchange', this._onFsChange);
+    document.addEventListener('webkitfullscreenchange', this._onFsChange);
+    this._onPipChange = () => this._syncPipUi();
+    document.addEventListener('enterpictureinpicture', this._onPipChange);
+    document.addEventListener('leavepictureinpicture', this._onPipChange);
   }
 
   setAspect(mode) {
@@ -31,6 +43,16 @@ export class Stage {
   _remove(id) {
     const tile = this.tiles.get(id);
     if (!tile) return;
+    // 正在全屏/画中画的瓦片：先退出对应状态，避免“幽灵全屏”
+    try {
+      if (document.pictureInPictureElement && tile.media === document.pictureInPictureElement) {
+        document.exitPictureInPicture?.().catch?.(() => { /* 忽略 */ });
+      }
+    } catch { /* 忽略 */ }
+    if ((document.fullscreenElement || document.webkitFullscreenElement) === tile.root) {
+      this.exitFullscreen();
+    }
+    if (this._pseudoTile === tile) this.exitPseudoFullscreen();
     try { if (tile.media?.srcObject) tile.media.srcObject = null; } catch { /* 忽略 */ }
     tile.root.remove();
     this.tiles.delete(id);
@@ -138,7 +160,7 @@ export class Stage {
       const pip = view.kind === 'video'
         ? el('button', { class: 'icon-btn', text: '⧉ 画中画', title: '弹出为系统小窗，可置顶', onclick: (e) => { e.stopPropagation(); this._pip(tile); } })
         : null;
-      if (pip) tools.append(pip);
+      if (pip) { tile._pipBtn = pip; tools.append(pip); }
       const fs = el('button', { class: 'icon-btn', text: '⛶ 全屏', title: '全屏观看（Esc 退出）', onclick: (e) => { e.stopPropagation(); this._fullscreen(tile); } });
       tools.append(fs);
       const stats = el('button', { class: 'icon-btn', text: '📶', title: '查看该画面的连接质量', onclick: (e) => { e.stopPropagation(); this.onAction?.(view.id, 'stats'); } });
@@ -207,18 +229,81 @@ export class Stage {
     if (!media) return;
     if (media.tagName !== 'VIDEO') { toast('该画面不支持画中画（影院模式请用全屏）'); return; }
     try {
-      if (document.pictureInPictureElement === media) await document.exitPictureInPicture();
-      else if (media.requestPictureInPicture) await media.requestPictureInPicture();
-      else toast('当前浏览器不支持画中画，可改用全屏');
+      if (document.pictureInPictureElement === media) {
+        await document.exitPictureInPicture();
+      } else if (document.pictureInPictureElement) {
+        // 已有其它画面在小窗：先退出再切换（避免误以为没反应）
+        await document.exitPictureInPicture().catch(() => { /* 忽略 */ });
+        if (media.requestPictureInPicture) await media.requestPictureInPicture();
+      } else if (media.requestPictureInPicture) {
+        await media.requestPictureInPicture();
+      } else {
+        toast('当前浏览器不支持画中画，可改用全屏');
+      }
     } catch (err) {
       toast('画中画不可用：' + (err?.message || err) + '（可改用全屏）');
     }
+    this._syncPipUi();
+  }
+
+  /** 同步各瓦片的画中画按钮状态（当前在小窗的画面显示「退出画中画」） */
+  _syncPipUi() {
+    const pipMedia = document.pictureInPictureElement || null;
+    for (const tile of this.tiles.values()) {
+      const btn = tile._pipBtn;
+      if (!btn) continue;
+      const active = !!pipMedia && tile.media === pipMedia;
+      btn.textContent = active ? '⧉ 退出小窗' : '⧉ 画中画';
+      btn.title = active ? '关闭系统小窗' : '弹出为系统小窗，可置顶';
+      tile.root.classList.toggle('pip-active', active);
+    }
+  }
+
+  /** 是否处于全屏（原生或 CSS 伪全屏） */
+  isFullscreen() {
+    return !!this._pseudoTile || !!(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
+  /** 退出全屏（原生优先，其次伪全屏） */
+  async exitFullscreen() {
+    if (this._pseudoTile) { this.exitPseudoFullscreen(); return; }
+    const elFs = document.fullscreenElement || document.webkitFullscreenElement;
+    if (elFs) {
+      try {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      } catch { /* 忽略 */ }
+    }
+    this._syncFullscreenUi();
+  }
+
+  /** 同步原生全屏 UI：全屏瓦片加「✕ 退出全屏」按钮，并通知外部更新按钮文案 */
+  _syncFullscreenUi() {
+    const elFs = document.fullscreenElement || document.webkitFullscreenElement || null;
+    const tile = elFs ? [...this.tiles.values()].find((t) => t.root === elFs) : null;
+    if (this._nativeFsTile && this._nativeFsTile !== tile) {
+      try { this._nativeFsTile._fsExitBtn?.remove(); } catch { /* 忽略 */ }
+      if (this._nativeFsTile) this._nativeFsTile._fsExitBtn = null;
+    }
+    if (tile) {
+      if (!tile._fsExitBtn) {
+        tile._fsExitBtn = el('button', {
+          class: 'pseudo-exit', text: '✕ 退出全屏', title: '退出全屏（也可按 Esc）',
+          onclick: (e) => { e.stopPropagation(); this.exitFullscreen(); },
+        });
+        tile.root.append(tile._fsExitBtn);
+      }
+      this._nativeFsTile = tile;
+    } else {
+      this._nativeFsTile = null;
+    }
+    this.onFullscreenChange?.(this.isFullscreen());
   }
 
   /** 全屏：优先原生 Fullscreen API；iOS 用 <video> 原生全屏；都不可用时用 CSS 覆盖（任何设备都能用） */
   async _fullscreen(tile) {
-    // 已在伪全屏 → 退出
-    if (tile.root.classList.contains('pseudo-fullscreen')) { this.exitPseudoFullscreen(); return; }
+    // 已是全屏状态 → 再点即退出（底部「全屏」按钮与画面按钮行为一致）
+    if (this.isFullscreen()) { await this.exitFullscreen(); return; }
     const media = tile.media;
     const isVideo = media?.tagName === 'VIDEO';
     const canApi = Boolean(document.fullscreenEnabled && (tile.root.requestFullscreen || tile.root.webkitRequestFullscreen));
@@ -226,6 +311,8 @@ export class Stage {
       try {
         const req = tile.root.requestFullscreen || tile.root.webkitRequestFullscreen || tile.root.msRequestFullscreen;
         await req.call(tile.root);
+        this._syncFullscreenUi();
+        toast('已进入全屏（点右上角「✕ 退出全屏」或按 Esc 结束）');
         return;
       } catch { /* 继续尝试其它方式 */ }
     }
@@ -251,6 +338,7 @@ export class Stage {
     }
     document.addEventListener('keydown', this._pseudoKeyHandler);
     toast('已进入全屏（按 Esc 或点右上角退出）');
+    this.onFullscreenChange?.(true);
   }
 
   exitPseudoFullscreen() {
@@ -262,6 +350,7 @@ export class Stage {
     }
     document.body.classList.remove('pseudo-fullscreen-active');
     if (this._pseudoKeyHandler) document.removeEventListener('keydown', this._pseudoKeyHandler);
+    this.onFullscreenChange?.(false);
   }
 
   /** 更新某个瓦片角标（不整体重绘） */

@@ -27,6 +27,15 @@ const waitEvent = (socket, event, ms = 5000) =>
     const timer = setTimeout(() => reject(new Error(`等待 ${event} 超时`)), ms);
     socket.once(event, (payload) => { clearTimeout(timer); resolve(payload); });
   });
+/** 等一个满足条件的特定事件（用于多成员场景，避免消费到别人的同类事件） */
+const waitEventWhere = (socket, event, pred, ms = 5000) =>
+  new Promise((resolve, reject) => {
+    const onEvt = (payload) => {
+      if (!pred || pred(payload)) { clearTimeout(timer); socket.off(event, onEvt); resolve(payload); }
+    };
+    const timer = setTimeout(() => { socket.off(event, onEvt); reject(new Error(`等待 ${event} 超时`)); }, ms);
+    socket.on(event, onEvt);
+  });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── HTTP 接口 ──
@@ -133,9 +142,24 @@ await emitAck(A, 'share:update', { share: null });
 const stop = await stopB;
 assert('停止共享广播 share=null', stop.id === A.id && stop.share === null);
 
+// ── 聊天 ──
+console.log('\n▶ 聊天');
+const chatMsgB = waitEvent(B, 'chat:message', 4000).catch(() => null);
+const chatRes = await emitAck(A, 'chat:send', { text: ' 大家好，一起看电影  ' });
+const cm = await chatMsgB;
+assert('A 发送聊天，B 收到广播', !!cm && cm.username === 'Alice' && cm.text === '大家好，一起看电影', cm ? `${cm.username}: ${cm.text}` : '未收到');
+assert('聊天 ack 返回消息', chatRes.ok && !!chatRes.message?.id);
+await sleep(350);   // 越过 250ms 限速，验证空消息拒绝
+const emptyRes = await emitAck(A, 'chat:send', { text: '   ' });
+assert('空消息被拒绝', !emptyRes.ok && !!emptyRes.error, emptyRes.error);
+const C = await connect('C');
+const joinedC = await emitAck(C, 'room:join', { username: 'Carol' });
+assert('新成员拿到最近聊天记录', Array.isArray(joinedC.roomState?.chat) && joinedC.roomState.chat.some((m) => m.text.includes('一起看电影')), `共 ${joinedC.roomState?.chat?.length ?? 0} 条`);
+C.emit('room:leave');
+
 // ── 离开清理 ──
 console.log('\n▶ 离开与清理');
-const memberLeftA = waitEvent(A, 'member:left');
+const memberLeftA = waitEventWhere(A, 'member:left', (p) => p?.id === B.id);
 await emitAck(B, 'room:leave');
 const ml = await memberLeftA;
 assert('A 收到 member:left(B)', ml.id === B.id);

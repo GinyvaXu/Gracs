@@ -36,7 +36,7 @@ export class RoomManager {
 
   getDefaultRoom() {
     if (!this.room) {
-      this.room = { id: 'main', createdAt: Date.now(), users: new Map() };
+      this.room = { id: 'main', createdAt: Date.now(), users: new Map(), chat: [] };
       this.rooms.set(this.room.id, this.room);
     }
     return this.room;
@@ -83,10 +83,33 @@ export class RoomManager {
     return null;
   }
 
+  /** 聊天：轻量文字消息，保留最近 100 条（新成员在 room:state 里拿到最近 50 条） */
+  addChat(room, socketId, text) {
+    const user = room.users.get(socketId);
+    if (!user) return null;
+    const clean = String(text || '')
+      .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '')   // 去掉控制字符（保留 \n \t）
+      .trim()
+      .slice(0, 500);
+    if (!clean) return null;
+    const msg = {
+      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      userId: socketId,
+      username: user.username,
+      text: clean,
+      ts: Date.now(),
+    };
+    room.chat = room.chat || [];
+    room.chat.push(msg);
+    if (room.chat.length > 100) room.chat.splice(0, room.chat.length - 100);
+    return msg;
+  }
+
   serialize(room) {
     return {
       id: room.id,
       users: [...room.users.values()].map((u) => ({ ...u, share: u.share ? { ...u.share } : null })),
+      chat: (room.chat || []).slice(-50),
     };
   }
 }

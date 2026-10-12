@@ -18,7 +18,14 @@ contextBridge.exposeInMainWorld('gvDesktop', {
   pickDisplaySource: (sourceId) => ipcRenderer.send('gv:pick-display-source', sourceId),
   cancelDisplaySource: () => ipcRenderer.send('gv:cancel-display-source'),
   // 系统声音启动失败（声卡驱动不兼容回环）→ 通知主进程按上次来源自动重试（无音频、不弹二次选择器）
-  notifyAudioFallback: () => ipcRenderer.invoke('gv:audio-fallback'),
+  // opts.useHelper=true 时渲染进程会用 helper 兼容采集系统声音（主进程保留窗口声音隔离）
+  notifyAudioFallback: (opts) => ipcRenderer.invoke('gv:audio-fallback', opts || {}),
+  // 兼容模式系统声音：helper 采集回环 PCM → 渲染进程合成 MediaStreamTrack
+  startSystemAudio: () => ipcRenderer.invoke('gv:system-audio-start'),
+  stopSystemAudio: () => ipcRenderer.send('gv:system-audio-stop'),
+  onSystemAudioFormat: (cb) => { const h = (_e, f) => cb(f); ipcRenderer.on('gv:system-audio-format', h); return () => ipcRenderer.removeListener('gv:system-audio-format', h); },
+  onSystemAudioChunk: (cb) => { const h = (_e, b) => cb(b); ipcRenderer.on('gv:system-audio-chunk', h); return () => ipcRenderer.removeListener('gv:system-audio-chunk', h); },
+  onSystemAudioEnd: (cb) => { const h = () => cb(); ipcRenderer.on('gv:system-audio-end', h); return () => ipcRenderer.removeListener('gv:system-audio-end', h); },
   // 窗口声音方案A：停止共享时恢复被静音的其他应用
   restoreWindowAudio: () => ipcRenderer.send('gv:restore-window-audio'),
   // Radmin VPN 联机

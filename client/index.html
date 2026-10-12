@@ -84,7 +84,7 @@
     <!-- ═══════════ 房间 ═══════════ -->
     <section id="screen-room" class="screen room" hidden>
       <header class="topbar">
-        <button id="btn-members" class="btn small mobile-only">👥</button>
+        <button id="btn-members" class="btn small mobile-only">👥<span id="chat-unread-mobile" class="unread" hidden>0</span></button>
         <div class="brand"><span class="logo-dot"></span><b>Gracs</b></div>
         <span id="conn-status" class="conn-status ok">● 已连接</span>
         <span id="room-info" class="dim room-info"></span>
@@ -107,11 +107,20 @@
 
       <main class="room-main">
         <aside class="sidebar" id="sidebar">
-          <div class="sidebar-head">
-            <span>在线成员</span>
-            <span id="member-count" class="chip">0</span>
+          <div class="sidebar-tabs">
+            <button id="tab-members" class="sidebar-tab active" type="button">👥 成员 <span id="member-count" class="chip">0</span></button>
+            <button id="tab-chat" class="sidebar-tab" type="button">💬 聊天 <span id="chat-unread" class="unread" hidden>0</span></button>
           </div>
-          <ul id="member-list" class="member-list"></ul>
+          <div id="pane-members" class="sidebar-pane">
+            <ul id="member-list" class="member-list"></ul>
+          </div>
+          <div id="pane-chat" class="sidebar-pane" hidden>
+            <div id="chat-list" class="chat-list"></div>
+            <form id="chat-form" class="chat-form" autocomplete="off">
+              <input id="chat-input" type="text" maxlength="500" placeholder="说点什么…（回车发送）" />
+              <button class="btn primary" type="submit" id="chat-send">发送</button>
+            </form>
+          </div>
           <div class="sidebar-foot">
             <button id="btn-qr" class="btn ghost block">📱 扫码加入</button>
             <button id="btn-leave" class="btn ghost danger block">🚪 离开房间</button>

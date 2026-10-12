@@ -9,7 +9,7 @@
 export function connectCloudSignaling(options) {
   const {
     getUrl,
-    onRoomState, onSignal, onMemberJoined, onMemberLeft, onShareUpdate, onError,
+    onRoomState, onSignal, onMemberJoined, onMemberLeft, onShareUpdate, onChatMessage, onError,
   } = options;
 
   let ws = null;
@@ -66,6 +66,7 @@ export function connectCloudSignaling(options) {
       case "member:left": onMemberLeft?.(msg.id); break;
       case "share:update": onShareUpdate?.(msg.id, msg.share); break;
       case "signal": onSignal?.(msg.from, msg.data); break;
+      case "chat:message": onChatMessage?.(msg); break;
       case "ack": {
         const r = pending.get(msg.rid);
         if (r) { pending.delete(msg.rid); r(msg); }
@@ -159,6 +160,8 @@ export function connectCloudSignaling(options) {
     leave,
     setShare: (share) => request({ t: "share:update", share }),
     signal: (to, data) => send({ t: "signal", to, data }),
+    /** 聊天：发送一条文字消息（ack 返回 {ok,message} 或 {error}） */
+    chatSend: (text) => request({ t: "chat:send", text }),
     // 影院模式码流中继依赖本机服务器：云房间下为空实现（main.js 会引导改用标准链路）
     cinemaMeta: () => {},
     cinemaChunk: () => {},

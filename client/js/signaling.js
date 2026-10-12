@@ -11,6 +11,7 @@ export function connectSignaling(handlers = {}) {
   socket.on('member:left', (p) => handlers.onMemberLeft?.(p.id));
   socket.on('share:update', (p) => handlers.onShareUpdate?.(p.id, p.share));
   socket.on('signal', (p) => handlers.onSignal?.(p.from, p.data));
+  socket.on('chat:message', (m) => handlers.onChatMessage?.(m));
   socket.on('cinema:meta', (p) => handlers.onCinemaMeta?.(p.id, p.meta));
   socket.on('cinema:chunk', (p) => handlers.onCinemaChunk?.(p.id, p.batch));
   socket.on('cinema:feedback', (p) => handlers.onCinemaFeedback?.(p.id, p.stats));
@@ -36,6 +37,8 @@ export function connectSignaling(handlers = {}) {
     leave: () => emitAck('room:leave', {}),
     setShare: (share) => emitAck('share:update', { share }),
     signal: (to, data) => socket.emit('signal', { to, data }),
+    /** 聊天：发送一条文字消息（ack 返回 {ok,message} 或 {error}） */
+    chatSend: (text) => emitAck('chat:send', { text }),
     cinemaMeta: (meta) => socket.emit('cinema:meta', { meta }),
     /** 影院模式码流批次（二进制，服务端 volatile 转发） */
     cinemaChunk: (batch) => socket.emit('cinema:chunk', batch),

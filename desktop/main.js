@@ -63,6 +63,8 @@ let serverPort = 3000;
 let pendingDisplayCapture = null; // { callback, audioRequested, sources }
 let lastDisplayPick = null;       // { sourceId, at } 最近一次用户在应用内选择器里选中的来源
 let audioFallbackUntil = 0;       // 系统声音启动失败后的自动重试窗口（主进程收到 gv:audio-fallback 时设置）
+let helperAudioFallback = false;  // 自动重试时是否用 helper 兼容采集系统声音（true）还是仅画面（false）
+let systemAudioProc = null;       // 兼容模式系统声音采集进程（gv-helper audio capture）
 let activeWindowAudioSnapshot = null; // 窗口声音方案A：被静音应用的快照路径
 let remoteRecoveryShown = false;
 let localUrlForRecovery = '';
@@ -232,6 +234,7 @@ async function bootstrap() {
   );
 
   wireDisplayCapture();
+  wireSystemAudioCapture();
 
   // 自动更新启动校验：上次安装是否已生效（参考诺丁汉 updater 的 boot marker）
   try {
@@ -262,12 +265,16 @@ function wireDisplayCapture() {
         const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
         const source = sources.find((src) => src.id === lastDisplayPick.sourceId);
         if (source) {
-          await restoreMutedApps();   // 不采集声音 → 恢复此前为「窗口声音」静音的其它应用
-          logger.work(`系统声音启动失败 → 自动沿用上次来源（仅画面）：${source.name}`);
+          // 兼容模式（helper 采集系统声音）→ 保留窗口声音隔离；仅画面 → 恢复被静音的应用
+          const keepIsolation = helperAudioFallback;
+          helperAudioFallback = false;
+          if (!keepIsolation) await restoreMutedApps();
+          logger.work(`系统声音启动失败 → 自动沿用上次来源${keepIsolation ? '（兼容模式采集声音）' : '（仅画面）'}：${source.name}`);
           callback({ video: source });
           return;
         }
       }
+      helperAudioFallback = false;
       const sources = await desktopCapturer.getSources({
         types: ['screen', 'window'],
         thumbnailSize: { width: 320, height: 180 },
@@ -322,10 +329,11 @@ function wireDisplayCapture() {
   });
 
   // 系统声音启动失败（页面收到 NotReadableError）→ 打开自动降级窗口：
-  // 下一次采集直接沿用上次来源、仅画面、不弹选择器
-  ipcMain.handle('gv:audio-fallback', () => {
+  // 下一次采集直接沿用上次来源、不弹选择器；useHelper=true 时渲染进程将用 helper 兼容采集系统声音
+  ipcMain.handle('gv:audio-fallback', (_e, opts = {}) => {
     audioFallbackUntil = Date.now() + 30_000;
-    logger.work('系统声音启动失败：下次采集将自动沿用上次来源（仅画面，不再弹选择器）');
+    helperAudioFallback = !!(opts && opts.useHelper);
+    logger.work('系统声音启动失败：下次采集将自动沿用上次来源' + (helperAudioFallback ? '（兼容模式：helper 采集系统声音）' : '（仅画面，不再弹选择器）'));
     return { ok: true };
   });
 
@@ -337,6 +345,86 @@ function wireDisplayCapture() {
     pendingDisplayCapture = null;
     pending?.callback(null);
   });
+}
+
+/** 发送事件到主窗口（窗口不存在/已销毁时静默忽略） */
+function sendToWindow(channel, payload) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  } catch { /* 忽略 */ }
+}
+
+// ── 兼容模式系统声音：helper 回环采集（NAudio）→ 裸 PCM 流 → 渲染进程合成音轨 ──
+// 用于 Chromium/Electron 自带回环在部分声卡驱动上失败
+// （NotReadableError: Could not start audio source）的机器。
+function wireSystemAudioCapture() {
+  const stopCapture = () => {
+    const p = systemAudioProc;
+    systemAudioProc = null;
+    if (!p) return;
+    try { p.kill(); } catch { /* 忽略 */ }
+  };
+
+  ipcMain.handle('gv:system-audio-start', async () => {
+    stopCapture();
+    const helper = helperPath();
+    if (!existsSync(helper)) return { ok: false, error: '缺少音频兼容组件（gv-helper.exe）' };
+    return await new Promise((resolve) => {
+      let settled = false;
+      let headerDone = false;
+      let header = '';
+      const finish = (res) => { if (!settled) { settled = true; resolve(res); } };
+      let proc;
+      try {
+        proc = spawn(helper, ['audio', 'capture'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+      } catch (err) {
+        finish({ ok: false, error: String(err?.message || err) });
+        return;
+      }
+      systemAudioProc = proc;
+      const timer = setTimeout(() => { finish({ ok: false, error: '采集启动超时' }); stopCapture(); }, 8000);
+
+      proc.stdout.on('data', (buf) => {
+        if (!headerDone) {
+          header += buf.toString('latin1');
+          const nl = header.indexOf('\n');
+          if (nl < 0) return;
+          headerDone = true;
+          const line = header.slice(0, nl).trim();
+          const rest = Buffer.from(header.slice(nl + 1), 'latin1');
+          const m = /^#PCM (\d+) (\d+) 16$/.exec(line);
+          if (!m) {
+            finish({ ok: false, error: '输出格式无效: ' + line.slice(0, 40) });
+            stopCapture();
+            return;
+          }
+          const format = { rate: Number(m[1]), channels: Number(m[2]) };
+          logger.work(`系统声音兼容采集已启动：${format.rate}Hz × ${format.channels}ch`);
+          sendToWindow('gv:system-audio-format', format);
+          if (rest.length) sendToWindow('gv:system-audio-chunk', rest);
+          clearTimeout(timer);
+          finish({ ok: true, format });
+          return;
+        }
+        sendToWindow('gv:system-audio-chunk', buf);
+      });
+      proc.stderr.on('data', (b) => logger.error('gv-helper(audio capture): ' + String(b).trim()));
+      proc.on('error', (err) => {
+        clearTimeout(timer);
+        finish({ ok: false, error: String(err?.message || err) });
+      });
+      proc.on('exit', (code) => {
+        clearTimeout(timer);
+        if (systemAudioProc === proc) systemAudioProc = null;
+        sendToWindow('gv:system-audio-end');
+        if (settled) logger.work(`系统声音兼容采集结束（code ${code ?? '?'}）`);
+        else finish({ ok: false, error: `采集进程退出（code ${code ?? '?'}）` });
+      });
+    });
+  });
+
+  ipcMain.on('gv:system-audio-stop', () => stopCapture());
+  app.on('before-quit', () => stopCapture());
 }
 
 /** 恢复「窗口声音」方案中为隔离声音而静音的其它应用（幂等：无快照时直接返回） */

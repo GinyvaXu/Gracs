@@ -46,15 +46,34 @@ export async function startScreenShare({ presetKey = DEFAULT_PRESET, withAudio =
 
   let stream;
   let audioFallback = false;
+  let helperAudio = null;
   try {
     stream = await navigator.mediaDevices.getDisplayMedia(constraints);
   } catch (err) {
     if (!withAudio || !isAudioStartError(err)) throw err;
-    // 降级：桌面版先通知主进程按「上次来源」自动重试（不会再弹一次选择器）；浏览器版会重新弹出选择器
-    console.warn('系统声音采集失败，自动降级为仅画面：', err);
+    // 系统声音启动失败：桌面版尝试「兼容模式」——用内置 helper（NAudio）回环采集绕过声卡驱动限制；
+    // 仍失败则降级为仅画面。两种重试都沿用上次来源，不会弹第二次选择器。
+    console.warn('系统声音采集失败，尝试兼容模式：', err);
     audioFallback = true;
-    try { await window.gvDesktop?.notifyAudioFallback?.(); } catch { /* 忽略 */ }
+    const useHelper = !!window.gvDesktop?.startSystemAudio;
+    try { await window.gvDesktop?.notifyAudioFallback?.({ useHelper }); } catch { /* 忽略 */ }
     stream = await navigator.mediaDevices.getDisplayMedia({ ...constraints, audio: false });
+    if (useHelper) {
+      try {
+        const { startHelperSystemAudio } = await import('./system-audio.js');
+        helperAudio = await startHelperSystemAudio();
+        if (helperAudio?.track) {
+          stream.addTrack(helperAudio.track);
+          stream._helperStop = helperAudio.stop;
+          audioFallback = false;   // 声音已拿到（兼容模式），不算降级
+          console.info('系统声音已通过兼容模式采集（helper 回环）', helperAudio.format);
+        }
+      } catch (e) {
+        console.warn('兼容模式系统声音失败，改为仅画面：', e);
+        helperAudio = null;
+        try { window.gvDesktop?.restoreWindowAudio?.(); } catch { /* 忽略 */ }
+      }
+    }
   }
 
   const videoTrack = stream.getVideoTracks()[0];

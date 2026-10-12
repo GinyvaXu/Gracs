@@ -53,6 +53,77 @@ public static class Program {
     }
 
         // ════════════ audio 子命令（基于 NAudio.CoreAudioApi，稳定可靠） ════════════
+
+    // audio capture：把系统声音（WASAPI 回环）以裸 PCM 写到 stdout（兼容模式：
+    // Chromium/Electron 自带回环在部分声卡驱动上不可用时使用）。
+    // 输出：首行 "#PCM <rate> <channels> 16"，随后为 s16le 交错采样（立体声）。
+    // 结束：父进程关闭 stdin 管道或终止本进程。
+    static int AudioCapture() {
+        try {
+            var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+            var device = enumerator.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Render, NAudio.CoreAudioApi.Role.Multimedia);
+            using (var cap = new NAudio.Wave.WasapiLoopbackCapture(device)) {
+                var outStream = Console.OpenStandardOutput();
+                var fmt = cap.WaveFormat;
+                var header = Encoding.ASCII.GetBytes(string.Format(CultureInfo.InvariantCulture,
+                    "#PCM {0} {1} 16\n", fmt.SampleRate, Math.Min(2, fmt.Channels)));
+                outStream.Write(header, 0, header.Length);
+                outStream.Flush();
+
+                cap.DataAvailable += delegate(object s, NAudio.Wave.WaveInEventArgs e) {
+                    try {
+                        var wf = cap.WaveFormat;
+                        int bps = wf.BitsPerSample / 8;
+                        int frame = bps * wf.Channels;
+                        if (frame <= 0 || e.BytesRecorded < frame) return;
+                        int frames = e.BytesRecorded / frame;
+                        var outBuf = new byte[frames * 4];
+                        int o = 0;
+                        for (int i = 0; i < frames; i++) {
+                            double l, r;
+                            if (wf.Channels == 1) { l = ReadAudioSample(e.Buffer, i * frame, wf); r = l; }
+                            else {
+                                l = ReadAudioSample(e.Buffer, i * frame, wf);
+                                r = ReadAudioSample(e.Buffer, i * frame + bps, wf);
+                            }
+                            short sl = ToPcm16(l), sr = ToPcm16(r);
+                            outBuf[o++] = (byte)(sl & 0xFF);
+                            outBuf[o++] = (byte)((sl >> 8) & 0xFF);
+                            outBuf[o++] = (byte)(sr & 0xFF);
+                            outBuf[o++] = (byte)((sr >> 8) & 0xFF);
+                        }
+                        outStream.Write(outBuf, 0, o);
+                        outStream.Flush();
+                    } catch {
+                        Environment.Exit(0); // 父进程退出（管道关闭）→ 结束
+                    }
+                };
+                cap.StartRecording();
+                // 持续运行，直到父进程终止本进程（写管道失败会触发退出）
+                try { Thread.Sleep(Timeout.Infinite); } catch { }
+                try { cap.StopRecording(); } catch { }
+            }
+            return 0;
+        } catch (Exception ex) {
+            Console.WriteLine("ERR: " + SafeName(ex.Message));
+            return 1;
+        }
+    }
+
+    static double ReadAudioSample(byte[] buf, int offset, NAudio.Wave.WaveFormat wf) {
+        if (wf.Encoding == NAudio.Wave.WaveFormatEncoding.IeeeFloat) return BitConverter.ToSingle(buf, offset);
+        if (wf.BitsPerSample == 16) return BitConverter.ToInt16(buf, offset) / 32768.0;
+        if (wf.BitsPerSample == 24) return (buf[offset] | (buf[offset + 1] << 8) | ((sbyte)buf[offset + 2] << 16)) / 8388608.0;
+        if (wf.BitsPerSample == 32) return BitConverter.ToInt32(buf, offset) / 2147483648.0;
+        return 0;
+    }
+
+    static short ToPcm16(double v) {
+        if (v > 1.0) v = 1.0;
+        if (v < -1.0) v = -1.0;
+        return (short)Math.Round(v * 32767.0);
+    }
+
     class SessionInfo {
         public uint Pid;
         public string Name;
@@ -203,6 +274,7 @@ public static class Program {
         if (args.Length >= 2 && args[1].Equals("list", StringComparison.OrdinalIgnoreCase)) return AudioList();
         if (args.Length >= 4 && args[1].Equals("mute-others", StringComparison.OrdinalIgnoreCase)) return AudioMuteOthers(args);
         if (args.Length >= 3 && args[1].Equals("restore", StringComparison.OrdinalIgnoreCase)) return AudioRestore(args);
+        if (args.Length >= 2 && args[1].Equals("capture", StringComparison.OrdinalIgnoreCase)) return AudioCapture();
         Console.WriteLine("ERR: 未知 audio 子命令");
         return 1;
     }

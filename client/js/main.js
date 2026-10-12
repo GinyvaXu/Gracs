@@ -14,6 +14,7 @@ import { StatsHub } from './stats.js';
 import { Stage } from './stage.js';
 import * as ui from './ui.js';
 import { renderInvite, renderNetworkReport, renderStats, clearStatsHistory, renderSourcePicker, renderQrModal } from './panels.js';
+import { initChat, addChatMessage, mergeChatHistory, clearChat } from './chat.js';
 
 // ═══════════ 状态 ═══════════
 const state = {
@@ -243,6 +244,13 @@ function wireStaticUI() {
       if (action === 'share') toggleShare();
       if (action === 'stats') { toggleStatsPanel(true); }
     },
+    onFullscreenChange: (on) => {
+      const btn = $('#btn-fullscreen');
+      if (btn) {
+        btn.textContent = on ? '⛶ 退出全屏' : '⛶ 全屏';
+        btn.classList.toggle('active', on);
+      }
+    },
   });
   state.stage.setAspect(state.settings.aspect);
 
@@ -338,6 +346,7 @@ async function enterRoom() {
   state.meId = state.socket.id();
   state.joined = true;
   state.members = res.roomState?.users || [];
+  mergeChatHistory(res.roomState?.chat, state.meId);   // 进房时带上最近聊天记录
   for (const m of state.members) if (m.share) state.shares.set(m.id, m.share);
   ui.renderRoomInfo({ version: state.version, mode: isElectron ? (await desktopMode()) : 'browser' });
   ui.setConnStatus(true);
@@ -369,6 +378,7 @@ async function enterCloudRoom(username) {
     state.meId = state.socket.id();
     state.joined = true;
     state.members = res.roomState?.users || [];
+    mergeChatHistory(res.roomState?.chat, state.meId);   // 云房间：进房时带上最近聊天记录
     for (const m of state.members) if (m.share) state.shares.set(m.id, m.share);
     ui.renderRoomInfo({ version: state.version, mode: 'cloud', code: state.cloudCode });
     ui.setConnStatus(true);
@@ -495,6 +505,7 @@ function connect() {
     onMemberLeft: (id) => onMemberLeft(id),
     onShareUpdate: (id, share) => onShareUpdate(id, share),
     onSignal: (from, data) => state.mesh?.handleSignal(from, data),
+    onChatMessage: (m) => addChatMessage(m, state.meId),
     onCinemaMeta: (id, meta) => onCinemaMeta(id, meta),
     onCinemaChunk: (id, batch) => onCinemaChunk(id, batch),
     onCinemaFeedback: (id, stats) => onCinemaFeedback(id, stats),
@@ -539,6 +550,7 @@ function connectCloud() {
     onMemberLeft: (id) => onMemberLeft(id),
     onShareUpdate: (id, share) => onShareUpdate(id, share),
     onSignal: (from, data) => state.mesh?.handleSignal(from, data),
+    onChatMessage: (m) => addChatMessage(m, state.meId),
     onError: (msg) => {
       toast(msg || '云信令连接异常', { kind: 'error', ms: 6000 });
       ui.setConnStatus(false, '● 云信令断开');
@@ -549,6 +561,7 @@ function connectCloud() {
 function applyRoomState(s) {
   const prevShares = new Map(state.shares);
   state.members = s.users || [];
+  mergeChatHistory(s.chat, state.meId);   // 云端/本地房间状态里可能带最近聊天记录
   state.shares.clear();
   for (const m of state.members) if (m.share) state.shares.set(m.id, m.share);
   // 清理已停止共享的画面
@@ -823,6 +836,7 @@ async function stopShare(reason, { silent = false } = {}) {
   const local = state.local;
   state.local = null;
   try { await local.cinema?.stop?.(); } catch { /* 忽略 */ }
+  try { local.stream?._helperStop?.(); } catch { /* 兼容模式系统声音清理 */ }
   state.mesh?.stopSharing();
   state.mesh?.stopCinemaAudio();
   window.gvDesktop?.restoreWindowAudio?.();
@@ -1153,6 +1167,16 @@ function wireDesktopUI() {
       window.gvDesktop.cancelDisplaySource();
     });
   }
+  // 聊天（侧栏「聊天」页签）
+  initChat({
+    onSend: async (text) => {
+      if (!state.socket?.connected?.()) {
+        toast('尚未连接，无法发送', { kind: 'error' });
+        return { error: '尚未连接' };
+      }
+      return await state.socket.chatSend(text);
+    },
+  });
 }
 
 async function openServerSettings() {
@@ -1225,6 +1249,7 @@ async function leaveRoom() {
   state.joined = false;
   state.stage.clear();
   ui.renderMembers([], null, null, focusMember);   // 清空侧栏成员列表
+  clearChat();                                      // 清空聊天记录
   ui.setUplinkInfo('');
   ui.shareControlState({ sharing: false, pending: false, statusText: '' });
   const wasCloud = !!state.socket?.isCloud;

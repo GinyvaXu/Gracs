@@ -190,6 +190,31 @@ input[type="range"] { accent-color: var(--accent); }
   background: rgba(10, 12, 19, 0.4);
 }
 .sidebar-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px; font-size: 13px; color: var(--dim); }
+/* ── 侧栏页签（成员 / 聊天）── */
+.sidebar-tabs { display: flex; gap: 4px; padding: 8px 8px 6px; border-bottom: 1px solid var(--border); }
+.sidebar-tab {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  background: transparent; border: 1px solid transparent; color: var(--dim);
+  padding: 7px 8px; border-radius: 9px; font-size: 13px; cursor: pointer;
+}
+.sidebar-tab:hover { color: var(--text); background: var(--panel); }
+.sidebar-tab.active { color: var(--text); background: var(--panel-strong); border-color: var(--border-strong); }
+.sidebar-tab .chip { font-size: 10px; padding: 1px 6px; }
+.unread {
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+  background: #ff5d5d; color: #fff; font-size: 10px; line-height: 16px; text-align: center;
+}
+.sidebar-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* ── 聊天 ── */
+.chat-list { flex: 1; min-height: 0; overflow: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+.chat-msg { max-width: 92%; align-self: flex-start; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 6px 9px; }
+.chat-msg.mine { align-self: flex-end; background: rgba(77, 212, 200, 0.12); border-color: rgba(77, 212, 200, 0.25); }
+.chat-meta { display: flex; gap: 8px; align-items: baseline; margin-bottom: 2px; }
+.chat-name { font-size: 11px; color: var(--dim); }
+.chat-time { font-size: 10px; color: var(--dim); opacity: 0.75; }
+.chat-text { font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+.chat-form { display: flex; gap: 6px; padding: 8px 10px 10px; border-top: 1px solid var(--border); }
+.chat-form input { flex: 1; min-width: 0; }
 .member-list { list-style: none; margin: 0; padding: 0 8px; overflow: auto; flex: 1; }
 .member-item {
   display: flex; align-items: center; gap: 9px;
@@ -395,6 +420,17 @@ body.pseudo-fullscreen-active { overflow: hidden; }
   padding: 8px 14px; border-radius: 999px; font-size: 13px; cursor: pointer;
   backdrop-filter: blur(8px);
 }
+/* 原生全屏（Fullscreen API）：瓦片铺满视口 + 工具栏常显 */
+.tile:fullscreen, .tile:-webkit-full-screen {
+  width: 100vw; height: 100vh; background: #000; border: none; border-radius: 0;
+}
+.tile:fullscreen .tile-media, .tile:fullscreen video, .tile:fullscreen canvas,
+.tile:-webkit-full-screen .tile-media, .tile:-webkit-full-screen video, .tile:-webkit-full-screen canvas {
+  width: 100%; height: 100%; object-fit: contain;
+}
+.tile:fullscreen .tile-tools, .tile:-webkit-full-screen .tile-tools { opacity: 1; }
+.tile.pip-active .tile-tools { opacity: 1; }
+#btn-fullscreen.active { border-color: var(--accent); color: var(--accent); }
 
 /* ── 触摸设备：工具栏常显（没有 hover），点击区域更大 ── */
 @media (hover: none) {
@@ -405,6 +441,8 @@ body.pseudo-fullscreen-active { overflow: hidden; }
 button, select, input, .tile { touch-action: manipulation; }
 
 .mobile-only { display: none; }
+#btn-members { position: relative; }
+#btn-members .unread { position: absolute; top: -5px; right: -5px; }
 @media (max-width: 900px) {
   .mobile-only { display: initial; }
   .room-main { grid-template-columns: minmax(0, 1fr); }

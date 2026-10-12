@@ -96,6 +96,18 @@ export function setupSignaling(io, rooms, opts = {}) {
       socket.data.cinemaShare = typeof id === 'string' ? id : null;
     });
 
+    // 聊天（文字）：广播 + 保留最近记录（新成员在 room:state 里拿到最近 50 条）
+    socket.on('chat:send', ({ text } = {}, ack) => {
+      const room = rooms.rooms.get(socket.data.roomId);
+      if (!room) return ack?.({ ok: false, error: '不在房间中' });
+      if (Date.now() - (socket.data.chatAt || 0) < 250) return ack?.({ ok: false, error: '发送太快，稍后再试' });
+      socket.data.chatAt = Date.now();
+      const msg = rooms.addChat(room, socket.id, text);
+      if (!msg) return ack?.({ ok: false, error: '消息为空或过长' });
+      io.to(room.id).emit('chat:message', msg);
+      ack?.({ ok: true, message: msg });
+    });
+
     // WebRTC 信令转发（offer / answer / ice）
     socket.on('signal', ({ to, data } = {}) => {
       if (typeof to !== 'string' || !data) return;
