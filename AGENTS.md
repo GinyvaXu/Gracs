@@ -82,6 +82,8 @@ RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测�
   回调需实现 IAgileObject（否则 E_ILLEGAL_METHOD_CALL）；`audio list` 为 UTF-8 输出。
 - **云房间（v2.2.0）**：信令走 Cloudflare DO（`gracs.ginyva.site`），媒体仍 P2P；`client/js/cloud-signal.js` 与 `signaling.js` 同接口；
   云房间下影院模式自动回退标准链路；云网页版由 Project4 同站托管（邀请链接无需主机可被连接）
+- **安全基线（v2.5.0）**：信令 Origin 校验（穿透域名需 `GRACS_ALLOWED_ORIGINS` 放行；`GRACS_ALLOW_ANY_ORIGIN=1` 关闭）；
+  Electron 主窗口禁止导航第三方页面（外链走系统浏览器）；自动更新安装包下载域名白名单（updater.js）；用户名/聊天过滤控制字符 + 限速与长度上限。
 - **二维码在客户端生成**（`client/vendor/qrcode-generator.mjs`）：`/api/qr.svg` 仅作回退，不再是必需接口。
 
 ## 注意事项
@@ -102,7 +104,11 @@ RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测�
 - 构建产物一律英文命名（Gracs-Debug/Portable/Setup-vX.Y.Z.exe）；目录不含中文
 
 ## 当前状态
-- 版本：v2.4.0（**按应用共享声音 + 文字聊天 + 系统声音兼容采集 + 全屏/画中画完善**）
+- 版本：v2.5.0（**安全加固 + 启动动画与全流程体验优化**）
+  - v2.5.0：启动加载动画（桌面品牌启动画面 + 页内动画，见 `#boot-loader` / `createSplash`）；
+    屏间过渡/弹窗弹出/按钮手感/聚焦光晕等交互细节（适配 prefers-reduced-motion）；
+    安全整改：信令 Origin 校验、Electron 导航防护、更新下载白名单、用户名控制字符过滤
+  - v2.4.1：系统声音失败提示按共享来源区分（窗口/整屏/桌面版）
   - v2.4.0：音频源可选「整机声音 / 跟随共享窗口 / 指定应用」——按应用采声（Windows 进程回环）只采该应用声音，
     语音软件不被采集也不被静音（解决"朋友听到自己"的回音）；失败自动回退整机/仅画面；共享状态栏显示音频源
   - v2.3.0：房间文字聊天（页面「成员 / 聊天」页签、未读徽标、历史下发；本地与云双端）；
