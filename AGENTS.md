@@ -30,7 +30,7 @@ update.json       自动更新清单（版本/下载地址/更新说明，随 gi
 ```bash
 npm start               # 浏览器版：启动服务器（http://localhost:3000，自动开 HTTPS :3001）
 npm run electron        # 桌面版开发运行
-npm test                # 端到端冒烟测试（26 项断言，需先 npm start）
+npm test                # 端到端冒烟测试（30 项断言，需先 npm start）
 npm run icon            # 重新生成图标（含 client/assets PWA 图标）
 npm run helper          # 从源码编译 resources/gv-helper.exe（.NET Framework csc，需要 NAudio DLL 已就位）
 npm run dist:debug      # 构建 Debug 版 exe（控制台+日志+DevTools，每次迭代必出）
@@ -45,7 +45,7 @@ npm run archive         # 发布归档：产物/源码快照到 versions/vX.Y.Z/
 # 目录：<Project7>\Project4（GitHub GinyvaXu/Project4；部署到 gracs.ginyva.site）
 node scripts/sync-client.mjs "<本仓库>/client"   # 同步云网页版客户端到 Project4/public（部署前必跑）
 npx wrangler deploy                              # 部署 Worker+静态资源（首次需 npx wrangler login）
-RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测试（13 项）
+RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测试（17 项）
 ```
 - 客户端 `cloud-signal.js` 与 `signaling.js` 同接口；云房间暂不支持影院模式（码流中继依赖本机服务器）
 - 云邀请链接 = `https://gracs.ginyva.site/?cloud=房间码`（可用 `?web=` 覆盖；桌面版 localhost 邀请必须走公网网页版）
@@ -72,11 +72,12 @@ RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测�
 - **画质档位**：`client/js/screenshare.js` 的 `PRESETS`（自动/电影/游戏/文字/省流），是分辨率+帧率+码率上限+拥塞策略的唯一来源。
 - **页面不可见时**：影院解码自动暂停并在恢复时请求关键帧（避免后台空转）；WebRTC 不需要类似处理。
 - **Service Worker 必须网络优先**：否则「改了代码刷新还是旧版」（历史踩坑）。`/js`、`/css`、`/assets` 都走网络优先 + 缓存兜底。
-- **无语音/无聊天**：客户端只有屏幕画面 + 可选系统声音。**不要加回麦克风/文字聊天**（用户明确要求专注共享；
-  v1.4.0 的内置语音因无法正常使用已于 v2.0.0 移除）。
+- **无语音（有文字聊天）**：客户端媒体面只有屏幕画面 + 可选系统声音，**不要加回麦克风语音**（v1.4.0 语音因无法正常使用已于 v2.0.0 移除）；
+  文字聊天（v2.3.0）是用户明确要求的轻量功能：`chat:send/chat:message`、最近记录随 `room:state.chat` 下发（本地服务器与云 DO 双实现）。
 - **停止共享以服务器状态为准**（不要依赖 track mute，窗口最小化也会触发）；桌面版停止时恢复被静音的其它应用
-- **系统声音降级（v2.2.0）**：`screenshare.js` 遇 `NotReadableError: Could not start audio source`（声卡驱动不兼容 WASAPI 回环，设备级问题）时自动改「仅画面」重试；
-  桌面版主进程 `gv:audio-fallback` 会沿用上次来源（不弹二次选择器）并恢复为「窗口声音」静音的其它应用
+- **系统声音双通道（v2.3.0）**：优先 Chromium/Electron 原生回环（`getDisplayMedia({audio:true})`）；失败（`NotReadableError: Could not start audio source`，
+  声卡驱动/蓝牙耳机兼容问题）时桌面版自动改用 **helper 兼容采集**：`gv-helper audio capture`（NAudio）→ 主进程 `gv:system-audio-*` IPC → `client/js/system-audio.js` 合成音轨并入 WebRTC。
+  兼容模式下不恢复「窗口声音隔离」（保持静音其它应用），失败才降级为仅画面；停止共享时 `_helperStop` 清理采集进程。
 - **云房间（v2.2.0）**：信令走 Cloudflare DO（`gracs.ginyva.site`），媒体仍 P2P；`client/js/cloud-signal.js` 与 `signaling.js` 同接口；
   云房间下影院模式自动回退标准链路；云网页版由 Project4 同站托管（邀请链接无需主机可被连接）
 - **二维码在客户端生成**（`client/vendor/qrcode-generator.mjs`）：`/api/qr.svg` 仅作回退，不再是必需接口。
@@ -99,7 +100,10 @@ RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测�
 - 构建产物一律英文命名（Gracs-Debug/Portable/Setup-vX.Y.Z.exe）；目录不含中文
 
 ## 当前状态
-- 版本：v2.2.0（**☁️ 云房间** + 品牌 Gracs）
+- 版本：v2.3.0（**文字聊天 + 系统声音兼容采集 + 全屏/画中画完善**）
+  - v2.3.0：房间文字聊天（页面「成员 / 聊天」页签、未读徽标、历史下发；本地与云双端）；
+    系统声音「兼容模式」采集（Chromium 回环失败的机器改走 helper/NAudio 采集，蓝牙耳机/声卡驱动问题不再只能"仅画面"）；
+    全屏/画中画交互完善（右上角退出按钮、底部按钮状态开关、PiP 状态同步）
   - v2.2.0：云房间连接模式（Project4 云信令：Cloudflare Workers + Durable Objects，`gracs.ginyva.site`，
     房间码进出、免组网）+ **云网页版同站托管**（`https://gracs.ginyva.site/?cloud=房间码`，邀请/扫码即用，手机可直接加入）；
     云房间暂不支持影院模式（自动回退标准链路）；二维码改客户端本地生成；Socket.IO 按需加载
