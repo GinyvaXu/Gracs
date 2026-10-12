@@ -75,9 +75,11 @@ RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测�
 - **无语音（有文字聊天）**：客户端媒体面只有屏幕画面 + 可选系统声音，**不要加回麦克风语音**（v1.4.0 语音因无法正常使用已于 v2.0.0 移除）；
   文字聊天（v2.3.0）是用户明确要求的轻量功能：`chat:send/chat:message`、最近记录随 `room:state.chat` 下发（本地服务器与云 DO 双实现）。
 - **停止共享以服务器状态为准**（不要依赖 track mute，窗口最小化也会触发）；桌面版停止时恢复被静音的其它应用
-- **系统声音双通道（v2.3.0）**：优先 Chromium/Electron 原生回环（`getDisplayMedia({audio:true})`）；失败（`NotReadableError: Could not start audio source`，
-  声卡驱动/蓝牙耳机兼容问题）时桌面版自动改用 **helper 兼容采集**：`gv-helper audio capture`（NAudio）→ 主进程 `gv:system-audio-*` IPC → `client/js/system-audio.js` 合成音轨并入 WebRTC。
-  兼容模式下不恢复「窗口声音隔离」（保持静音其它应用），失败才降级为仅画面；停止共享时 `_helperStop` 清理采集进程。
+- **系统声音三模式（v2.4.0）**：共享栏「音频源」= 整机声音（默认，优先 Chromium 原生回环，失败走 helper 兼容采集）/
+  跟随共享窗口 / 指定应用。后两者走 **进程回环**（`gv-helper audio capture --pid N`，Win10 2004+/11；
+  自备 PCM 格式 + AUTOCONVERTPCM，GetMixFormat 对进程回环不可用）——只采目标进程树的声音，
+  **不会采集/静音语音软件**（避免朋友听到自己的回音）；helper 失败回退整机声音，再失败仅画面。
+  回调需实现 IAgileObject（否则 E_ILLEGAL_METHOD_CALL）；`audio list` 为 UTF-8 输出。
 - **云房间（v2.2.0）**：信令走 Cloudflare DO（`gracs.ginyva.site`），媒体仍 P2P；`client/js/cloud-signal.js` 与 `signaling.js` 同接口；
   云房间下影院模式自动回退标准链路；云网页版由 Project4 同站托管（邀请链接无需主机可被连接）
 - **二维码在客户端生成**（`client/vendor/qrcode-generator.mjs`）：`/api/qr.svg` 仅作回退，不再是必需接口。
@@ -100,9 +102,11 @@ RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测�
 - 构建产物一律英文命名（Gracs-Debug/Portable/Setup-vX.Y.Z.exe）；目录不含中文
 
 ## 当前状态
-- 版本：v2.3.0（**文字聊天 + 系统声音兼容采集 + 全屏/画中画完善**）
+- 版本：v2.4.0（**按应用共享声音 + 文字聊天 + 系统声音兼容采集 + 全屏/画中画完善**）
+  - v2.4.0：音频源可选「整机声音 / 跟随共享窗口 / 指定应用」——按应用采声（Windows 进程回环）只采该应用声音，
+    语音软件不被采集也不被静音（解决"朋友听到自己"的回音）；失败自动回退整机/仅画面；共享状态栏显示音频源
   - v2.3.0：房间文字聊天（页面「成员 / 聊天」页签、未读徽标、历史下发；本地与云双端）；
-    系统声音「兼容模式」采集（Chromium 回环失败的机器改走 helper/NAudio 采集，蓝牙耳机/声卡驱动问题不再只能"仅画面"）；
+    系统声音「兼容模式」采集（Chromium 回环失败的机器改走 helper/NAudio 采集）；
     全屏/画中画交互完善（右上角退出按钮、底部按钮状态开关、PiP 状态同步）
   - v2.2.0：云房间连接模式（Project4 云信令：Cloudflare Workers + Durable Objects，`gracs.ginyva.site`，
     房间码进出、免组网）+ **云网页版同站托管**（`https://gracs.ginyva.site/?cloud=房间码`，邀请/扫码即用，手机可直接加入）；
