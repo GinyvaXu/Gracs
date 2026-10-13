@@ -102,6 +102,7 @@ RELAY=wss://gracs.ginyva.site node tests/protocol-test.mjs   # 线上协议测�
 - 前端要求安全上下文才能采集屏幕：localhost 与桌面版天然满足；局域网其它电脑需用 HTTPS（自动生成的自签名证书，端口 = 端口+1）
 - mesh 适合 2~4 人共享/观看；更大规模需 SFU（mediasoup/LiveKit，见 docs/tech-alternatives.md）
 - **图标**：以 `assets/design-*/` 设计素材为唯一来源（交接单见 docs/图标交接-*.md）；换图标 = 放入新素材目录 → `npm run icon`（同步桌面/PWA/favicon，禁止改回程序化绘制）
+- **更新器改动必实测**：批处理脚本内嵌 PowerShell 的引号必须转义（`\'%NAME%\'`，历史上漏转义导致更新安装永久报错）；下载超时用「卡死检测」而非固定总超时
 - **包名**：构建产物一律英文命名（Gracs-Debug/Portable/Setup-vX.Y.Z.exe）；目录不含中文
 
 ## 当前状态
