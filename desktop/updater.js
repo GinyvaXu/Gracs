@@ -29,7 +29,8 @@ const MANIFEST_SOURCES = [
 export const RELEASE_PAGE = `https://github.com/${REPO}/releases`;
 const _UA = 'Gracs-Updater/1.0';
 const CHECK_TIMEOUT = 12_000;
-const DOWNLOAD_TIMEOUT = 180_000;
+const DOWNLOAD_TIMEOUT = 20 * 60_000;        // 总上限：大文件 + 慢网络（99MB @ 300KB/s ≈ 5.5 分钟）
+const DOWNLOAD_STALL_TIMEOUT = 60_000;       // 无数据 60 秒视为连接卡死（比总超时更准，不会误杀慢速下载）
 const MIRROR_PREFIXES = [
   'https://ghfast.top/',
   'https://ghproxy.net/',
@@ -131,6 +132,12 @@ export async function checkForUpdate({ currentVersion, onStatus }) {
 async function downloadOne(url, destPath, onProgress, timeout = DOWNLOAD_TIMEOUT) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
+  let lastDataAt = Date.now();
+  const stallTimer = setInterval(() => {
+    if (Date.now() - lastDataAt > DOWNLOAD_STALL_TIMEOUT) {
+      try { ctrl.abort(); } catch { /* 忽略 */ }
+    }
+  }, 5000);
   try {
     const res = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': _UA } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -141,6 +148,7 @@ async function downloadOne(url, destPath, onProgress, timeout = DOWNLOAD_TIMEOUT
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
+      lastDataAt = Date.now();
       received += value.length;
       ws.write(value);
       if (total) onProgress?.(Math.round((received / total) * 100));
@@ -154,6 +162,7 @@ async function downloadOne(url, destPath, onProgress, timeout = DOWNLOAD_TIMEOUT
     return destPath;
   } finally {
     clearTimeout(timer);
+    clearInterval(stallTimer);
   }
 }
 
@@ -208,7 +217,7 @@ export function verifyUpdateMarker(currentVersion, logger) {
 // ---------- 应用更新：等退出 → 静默安装 → 重启 ----------
 // 与诺丁汉 updater.py 同思路：写一个临时 .bat，等本进程退出后以静默参数安装，
 // 成功后重启应用并自清理。NSIS 安装器支持 /S 静默安装，AppId 固定保证覆盖升级。
-function launchUpdateBatch(installerPath, exePath, logPath) {
+export function launchUpdateBatch(installerPath, exePath, logPath) {
   const batDir = app.getPath('temp');
   const batPath = join(batDir, `Gracs-update-${Date.now()}.bat`);
   const name = exePath.split(/[\\/]/).pop().replace(/\.exe$/i, '');
