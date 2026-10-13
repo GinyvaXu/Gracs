@@ -200,7 +200,7 @@ export function verifyUpdateMarker(currentVersion, logger) {
   try {
     const f = markerFile();
     if (!existsSync(f)) return;
-    const m = JSON.parse(readFileSync(f, 'utf8'));
+    const m = JSON.parse(readFileSync(f, 'utf8').replace(/^\uFEFF/, ''));   // 兼容手工编辑带入的 BOM
     if (!m?.target) { try { rmSync(f, { force: true }); } catch { /* 忽略 */ } return; }
     if (isNewer(String(currentVersion), m.from)) {
       logger?.work?.(`自动更新成功：v${m.from} → v${currentVersion}（标记已清除）`);
@@ -232,12 +232,12 @@ export function launchUpdateBatch(installerPath, exePath, logPath) {
     'rem wait for app exit (max 40s)',
     'set /a n=0',
     ':wait',
-    'powershell -NoProfile -WindowStyle Hidden -Command "if (Get-Process -Name '%NAME%' -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"',
+    'powershell -NoProfile -WindowStyle Hidden -Command "if (Get-Process -Name \'%NAME%\' -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"',
     'if errorlevel 1 goto gone',
     'set /a n+=1',
     'if !n! lss 20 ( powershell -NoProfile -WindowStyle Hidden -Command "Start-Sleep -Seconds 2" & goto wait )',
     'echo [%date% %time%] force kill >> "%LOG%"',
-    'powershell -NoProfile -WindowStyle Hidden -Command "Stop-Process -Name '%NAME%' -Force -ErrorAction SilentlyContinue"',
+    'powershell -NoProfile -WindowStyle Hidden -Command "Stop-Process -Name \'%NAME%\' -Force -ErrorAction SilentlyContinue"',
     ':gone',
     'rem silent install (NSIS /S), retry while locked',
     'set /a n=0',
@@ -253,7 +253,7 @@ export function launchUpdateBatch(installerPath, exePath, logPath) {
     '  goto end',
     ')',
     'echo [%date% %time%] relaunch >> "%LOG%"',
-    'if exist "%EXE%" powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -FilePath '%EXE%'"',
+    'if exist "%EXE%" powershell -NoProfile -WindowStyle Hidden -Command "Start-Process -FilePath \'%EXE%\'"',
     ':end',
     'del "%INST%" >nul 2>&1',
     '(goto) 2>nul & del "%~f0"',
